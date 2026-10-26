@@ -65,7 +65,17 @@ class Product(Base):
     name: Mapped[str] = mapped_column(String(255))
     description: Mapped[str] = mapped_column(Text, default="")
     category: Mapped[str] = mapped_column(String(120), default="")
+    brand: Mapped[str] = mapped_column(String(120), default="", server_default="")
+    pack_size: Mapped[str] = mapped_column(String(80), default="", server_default="")
+    net_quantity: Mapped[float | None] = mapped_column(Float, nullable=True)
+    net_unit: Mapped[str] = mapped_column(String(8), default="", server_default="")  # g, kg, ml, L
+    packaging: Mapped[str] = mapped_column(String(80), default="", server_default="")
+    catalogue_page: Mapped[str] = mapped_column(String(40), default="", server_default="")  # e.g. "3, 5"
+    notes: Mapped[str] = mapped_column(Text, default="", server_default="")
     hs_code: Mapped[str] = mapped_column(ForeignKey("hs_codes.code"))
+    # "suggested" until a customs broker or the client confirms the classification
+    hs_status: Mapped[str] = mapped_column(String(12), default="suggested", server_default="suggested")
+    hs_note: Mapped[str] = mapped_column(Text, default="", server_default="")
     created_at: Mapped[datetime] = _now()
     hs: Mapped[HSCode] = relationship(lazy="joined")
 

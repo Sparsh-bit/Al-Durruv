@@ -293,3 +293,158 @@ def test_logistics_quotes_are_labelled_client_provided(analyst, viewer):
         ).status_code
         == 422
     )
+
+
+# ---------- catalogue details, export, bulk refresh ----------
+
+
+def test_import_catalogue_columns_and_hs_status_reset(analyst, db):
+    csv = (
+        b"sku,name,brand,category,hs_code,pack_size,net_quantity,net_unit,packaging,catalogue_page,hs_status\n"
+        b'D1,Apricot Jam,Durra,Jams,190531,800 g,800,g,Glass jar,"3, 5",confirmed\n'
+        b"D2,Bad qty,Durra,Jams,190531,x,abc,g,Jar,7,\n"
+    )
+    r = analyst.post("/api/products/import", files={"file": ("c.csv", csv, "text/csv")}).json()
+    assert r["created"] == 2 and r["errors"] == []
+    p = db.scalar(select(Product).where(Product.sku == "D1"))
+    assert (p.brand, p.pack_size, p.net_quantity, p.packaging, p.hs_status) == (
+        "Durra",
+        "800 g",
+        800,
+        "Glass jar",
+        "confirmed",
+    )
+    assert db.scalar(select(Product.net_quantity).where(Product.sku == "D2")) is None
+    listed = next(x for x in analyst.get("/api/products").json() if x["sku"] == "D1")
+    assert listed["catalogue_pages"] == [3, 5]
+    # changing the HS code without confirming it again resets the status
+    analyst.post(
+        "/api/products/import", files={"file": ("c.csv", b"sku,name,hs_code\nD1,Apricot Jam,090111\n", "text/csv")}
+    )
+    db.expire_all()
+    assert db.scalar(select(Product.hs_status).where(Product.sku == "D1")) == "suggested"
+
+
+def test_product_validation_and_export(analyst):
+    bad = analyst.post("/api/products", json={"sku": "E1", "name": "X", "hs_code": "190531", "net_unit": "lbs"})
+    assert bad.status_code == 422
+    ok = analyst.post(
+        "/api/products",
+        json={
+            "sku": "E1",
+            "name": "Ketchup",
+            "hs_code": "190531",
+            "net_quantity": 450,
+            "net_unit": "g",
+            "pack_size": "450 g",
+            "catalogue_page": "58, 59",
+        },
+    )
+    assert ok.status_code == 201 and ok.json()["catalogue_pages"] == [58, 59]
+    exp = analyst.get("/api/products/export")
+    assert exp.status_code == 200 and "attachment" in exp.headers["content-disposition"]
+    assert "E1,Ketchup" in exp.content.decode("utf-8-sig")
+
+
+def test_refresh_missing_queues_each_code_once(analyst, viewer, monkeypatch):
+    calls = []
+    monkeypatch.setattr(trade, "refresh_many", lambda jobs: calls.append(jobs))
+    for sku, hs in (("A", "190531"), ("B", "190531"), ("C", "090111")):
+        analyst.post("/api/products", json={"sku": sku, "name": sku, "hs_code": hs})
+    first = analyst.post("/api/markets/refresh-missing").json()
+    assert first == {"queued": 2, "already_active": 0} and [h for _, h in calls[0]] == ["090111", "190531"]
+    assert analyst.post("/api/markets/refresh-missing").json() == {"queued": 0, "already_active": 2}
+    status = viewer.get("/api/markets/status").json()
+    assert status["hs_codes"] == 2 and status["loaded"] == 0 and len(status["active"]) == 2
+    assert viewer.post("/api/markets/refresh-missing").status_code == 403
+
+
+def test_bundled_catalogue_file_is_valid(db):
+    import pandas as pd
+
+    from app.routers.catalogue import apply_catalogue
+    from app.seed import CATALOGUE
+
+    df = pd.read_csv(CATALOGUE, dtype=str, keep_default_na=False)
+    codes = sorted(set(df["hs_code"]))
+    from app.models import HSCode
+
+    db.add_all([HSCode(code=c, description=c) for c in codes if c not in ("190531", "090111")])
+    db.commit()
+    result = apply_catalogue(db, df)
+    assert result["errors"] == [] and result["created"] == len(df) == 127
+    assert df["sku"].is_unique and (df["brand"] == "Durra").all()
+
+
+# ---------- quota handling and request batching ----------
+
+
+def test_quota_error_is_typed_and_not_retried(db, monkeypatch):
+    err = comtrade._error_from_output(
+        '{"statusCode": 403, "message": "Out of call volume quota. Quota will be replenished in 00:21:48."}'
+    )
+    assert isinstance(err, comtrade.QuotaExceeded) and err.wait_s == 21 * 60 + 48
+    assert not isinstance(comtrade._error_from_output("500 server error"), comtrade.QuotaExceeded)
+    calls = []
+
+    def over_quota(params, key):
+        calls.append(1)
+        raise err
+
+    with pytest.raises(comtrade.QuotaExceeded):
+        comtrade.fetch(db, period=2020, cmd="190531", flow="M", caller=over_quota)
+    assert len(calls) == 1  # no pointless retries
+
+
+def _start_run(db):
+    from app.models import RefreshRun
+
+    run = RefreshRun(adapter="un_comtrade", scope="HS 190531", status="queued")
+    db.add(run)
+    db.commit()
+    return run.id
+
+
+def test_refresh_pauses_on_quota_then_completes(db, monkeypatch):
+    from app.models import RefreshRun
+
+    real_fetch = comtrade.fetch
+    state = {"quota_hits": 0, "periods": []}
+
+    def fake_fetch(db_, **kw):
+        if state["quota_hits"] == 0:
+            state["quota_hits"] += 1
+            raise comtrade.QuotaExceeded("quota", 120)
+        state["periods"].append(str(kw["period"]))
+        return real_fetch(db_, caller=lambda params, key: ROWS if kw.get("partner") == 0 else [], **kw)
+
+    monkeypatch.setattr(comtrade, "fetch", fake_fetch)
+    monkeypatch.setattr(trade, "_years", lambda: [2020, 2021, 2022, 2023])
+    slept = []
+    run_id = _start_run(db)
+    trade.refresh_hs(run_id, "190531", sleep=slept.append)
+    db.expire_all()
+    run = db.get(RefreshRun, run_id)
+    assert run.status == "succeeded", run.error
+    assert slept == [180]  # waited out the quota (+60 s margin) once
+    assert "2020,2021" in state["periods"] and "2022,2023" in state["periods"]  # two years per request
+
+
+def test_refresh_splits_years_when_response_hits_record_cap(db, monkeypatch):
+    from app.models import RefreshRun
+
+    real_fetch = comtrade.fetch
+    periods = []
+
+    def fake_fetch(db_, **kw):
+        periods.append(str(kw["period"]))
+        rows = ROWS * comtrade.MAX_RECORDS if "," in str(kw["period"]) else ROWS
+        return real_fetch(db_, caller=lambda params, key: rows if kw.get("partner") == 0 else [], **kw)
+
+    monkeypatch.setattr(comtrade, "fetch", fake_fetch)
+    monkeypatch.setattr(trade, "_years", lambda: [2022, 2023])
+    run_id = _start_run(db)
+    trade.refresh_hs(run_id, "190531", sleep=lambda s: None)
+    db.expire_all()
+    assert db.get(RefreshRun, run_id).status == "succeeded"
+    assert periods[:3] == ["2022,2023", "2022", "2023"]

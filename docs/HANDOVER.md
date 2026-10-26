@@ -25,6 +25,26 @@
 - Frontend: strict TypeScript, lint clean, production build OK; every page checked in a browser at
   desktop and phone width with zero console errors.
 
+## Durra catalogue (imported 26 Oct 2026)
+
+- Source: `Durra Products Profile 2023`, 67 image-only pages, read page by page. Data file:
+  `backend/data/durra_catalogue.csv`; page images: `backend/static/catalogue/`.
+- 127 SKUs, 26 collections, 37 HS codes. **HS codes are suggestions** (the catalogue has none) and are
+  shown as "Suggested" until confirmed.
+- Catalogue issues to raise with the client (also stored as per-product notes): placeholder "Lorem ipsum"
+  text on every page; pages 50 and 56 caption every item "Green Olives Stuffed 350G - 550G"; the hot-sauce
+  bottle is captioned "Pizza Sauce"; weight/ounce mismatches (Makdous 800 g "21.2 oz", luncheon 340 g
+  "0.74 oz", pastries 500 g "26.45 oz"); hummus and mustard captions differ from their labels.
+- Labels are printed in Arabic, English, French, German and Swedish, which points to EU/Nordic export markets.
+- Producer: ALDurra Food Products Co., Damascus Countryside (Syria), brand "since 1979". Set
+  `HOME_COUNTRY_ISO3=SYR` in `.env` to show Syria's share in each market.
+
+## UN Comtrade free-tier quota
+
+The free preview API has a call-volume quota. A full refresh needs ~13 calls per HS code. When the quota
+runs out, the loader pauses until the reset time Comtrade reports and then continues on its own.
+Loading all 37 codes therefore takes a few hours on the free tier; a free Comtrade API key raises the limits.
+
 ## Not yet verified live — needs the Claude API key
 
 AI paths are implemented and tested with a mocked model, but **no real Claude call has been made**

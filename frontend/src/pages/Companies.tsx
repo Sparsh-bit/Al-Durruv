@@ -10,7 +10,7 @@ import { WorkspaceHeader } from '../components/Workspace'
 import { api, patch, post } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { date } from '../lib/format'
-import { useOverview, useProduct, useRun } from '../lib/hooks'
+import { isActive, useOverview, useProduct, useRun } from '../lib/hooks'
 import type { Company, RankedMarket, Run } from '../lib/types'
 
 type ProspectList = { id: number; name: string; hs_code: string | null; companies: Company[] }
@@ -37,7 +37,7 @@ function ResearchPanel({ hs, productId, markets, onFinished }: { hs: string; pro
     if (r.status === 'succeeded') toast.success(r.message)
     else toast.error(r.error || 'Research failed')
   })
-  const running = run?.status === 'running'
+  const running = isActive(run)
   const cached = start.data?.status === 'succeeded' && run?.id === start.data.id
 
   if (health.data && !health.data.ai_enabled)

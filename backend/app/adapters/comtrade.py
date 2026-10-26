@@ -10,6 +10,7 @@ import hashlib
 import io
 import json
 import math
+import re
 import threading
 import time
 from datetime import UTC, datetime, timedelta
@@ -41,8 +42,28 @@ KEEP = (
 )
 
 
+MAX_RECORDS = 500  # free preview cap per request
+
+
 class ComtradeError(RuntimeError):
     pass
+
+
+class QuotaExceeded(ComtradeError):
+    """The account's call-volume quota is used up; retrying before wait_s seconds is pointless."""
+
+    def __init__(self, message: str, wait_s: int):
+        super().__init__(message)
+        self.wait_s = wait_s
+
+
+def _error_from_output(text: str) -> ComtradeError:
+    msg = text.strip()[:500] or "Comtrade returned no response"
+    if "quota" in msg.lower():
+        m = re.search(r"(\d+):(\d{2}):(\d{2})", msg)
+        wait = int(m[1]) * 3600 + int(m[2]) * 60 + int(m[3]) if m else 3600
+        return QuotaExceeded(msg, wait)
+    return ComtradeError(msg)
 
 
 _lock = threading.Lock()
@@ -79,7 +100,7 @@ def _call(params: dict, key: str) -> list[dict]:
         partner2Code=None,
         customsCode=None,
         motCode=None,
-        maxRecords=params.get("maxRecords", 500),
+        maxRecords=MAX_RECORDS,
         format_output="JSON",
         aggregateBy=None,
         breakdownMode="classic",
@@ -95,7 +116,7 @@ def _call(params: dict, key: str) -> list[dict]:
     except Exception as exc:  # network errors raised inside the client
         raise ComtradeError(f"Comtrade request failed: {exc}") from exc
     if df is None:
-        raise ComtradeError(out.getvalue().strip()[:500] or "Comtrade returned no response")
+        raise _error_from_output(out.getvalue())
     if df.empty:
         return []
     cols = [c for c in KEEP if c in df.columns]
@@ -115,7 +136,7 @@ def public_url(params: dict, key: str) -> str:
 def fetch(
     db: Session,
     *,
-    period: int,
+    period: int | str,
     cmd: str,
     flow: str,
     reporter: int | None = None,
@@ -123,7 +144,8 @@ def fetch(
     retries: int = 3,
     caller=_call,
 ) -> tuple[list[dict], SourceRecord]:
-    """Fetch annual HS6 trade rows. partner=0 → World totals; partner=None → all partners."""
+    """Fetch annual HS6 trade rows. period: a year or comma-separated years.
+    partner=0 → World totals; partner=None → all partners. Quota errors are raised immediately."""
     s = get_settings()
     params = {
         "period": str(period),
@@ -147,6 +169,8 @@ def fetch(
         try:
             rows = caller(params, s.comtrade_subscription_key)
             break
+        except QuotaExceeded:
+            raise
         except ComtradeError as exc:
             last_err = exc
             if attempt < retries - 1:

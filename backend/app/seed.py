@@ -1,43 +1,26 @@
-"""Idempotent seed: HS6 reference list, first admin user, demo products.
+"""Idempotent seed: HS6 reference list, first admin user, the Durra product catalogue.
 
 Run: uv run python -m app.seed
+     uv run python -m app.seed --replace-products   # also delete products not in the catalogue file
 """
 
+import argparse
 import contextlib
 import io
+from pathlib import Path
 
 import comtradeapicall
-from sqlalchemy import select
+import pandas as pd
+from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert
 
 from app.config import get_settings
 from app.db import SessionLocal
 from app.models import HSCode, Product, Role, User
+from app.routers.catalogue import apply_catalogue
 from app.security import hash_password
 
-DEMO_PRODUCTS = [
-    (
-        "DEMO-BISC-01",
-        "Butter cookies (private label)",
-        "190531",
-        "Bakery",
-        "Sweet biscuits in retail packs; private-label ready.",
-    ),
-    (
-        "DEMO-SOAP-01",
-        "Toilet soap bar 100 g",
-        "340111",
-        "Personal care",
-        "Moulded toilet soap bars for retail and hospitality.",
-    ),
-    (
-        "DEMO-SHMP-01",
-        "Shampoo 400 ml",
-        "330510",
-        "Personal care",
-        "Hair shampoo in retail bottles; private-label ready.",
-    ),
-]
+CATALOGUE = Path(__file__).parent.parent / "data" / "durra_catalogue.csv"
 
 
 def load_hs_codes(db) -> int:
@@ -52,7 +35,7 @@ def load_hs_codes(db) -> int:
     return len(rows)
 
 
-def main() -> None:
+def main(replace_products: bool = False) -> None:
     s = get_settings()
     with SessionLocal() as db:
         print(f"HS codes loaded: {load_hs_codes(db)}")
@@ -68,12 +51,21 @@ def main() -> None:
                 )
             )
             print(f"Admin user created: {s.admin_email}")
-        for sku, name, hs, cat, desc in DEMO_PRODUCTS:
-            if not db.scalar(select(Product).where(Product.sku == sku)):
-                db.add(Product(sku=sku, name=name, hs_code=hs, category=cat, description=desc))
         db.commit()
-        print("Demo products ready.")
+        if db.scalar(select(Product.id).limit(1)) and not replace_products:
+            print("Products already exist; catalogue not re-imported (use --replace-products to sync).")
+            return
+        df = pd.read_csv(CATALOGUE, dtype=str, keep_default_na=False)
+        if replace_products:
+            gone = db.execute(delete(Product).where(Product.sku.not_in(df["sku"].tolist())))
+            print(f"Removed {gone.rowcount} products not in the catalogue.")
+        result = apply_catalogue(db, df)
+        print(f"Catalogue: {result['created']} created, {result['updated']} updated, {len(result['errors'])} errors.")
+        for e in result["errors"]:
+            print(f"  line {e['line']}: {e['error']}")
 
 
 if __name__ == "__main__":
-    main()
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--replace-products", action="store_true", help="delete products that are not in the catalogue")
+    main(ap.parse_args().replace_products)

@@ -1,16 +1,14 @@
-from datetime import UTC, datetime, timedelta
-
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from app.analytics import COMPONENT_LABELS, DEFAULT_WEIGHTS
-from app.models import HSCode, RefreshRun
+from app.models import HSCode, Product, RefreshRun, TradeObservation
 from app.security import DB, Analyst, CurrentUser
 from app.services import trade
 
 router = APIRouter(prefix="/api/markets", tags=["markets"])
-STALE_RUN = timedelta(minutes=20)
+ACTIVE = ("queued", "running")
 
 
 def _run_out(r: RefreshRun | None) -> dict | None:
@@ -55,13 +53,71 @@ def overview(hs: str, _: CurrentUser, db: DB):
 def refresh(hs: str, user: Analyst, db: DB, tasks: BackgroundTasks):
     _hs(db, hs)
     running = latest_run(db, hs)
-    if running and running.status == "running" and datetime.now(UTC) - running.started_at < STALE_RUN:
+    if running and running.status in ACTIVE:
         return _run_out(running)
     run = RefreshRun(adapter="un_comtrade", scope=f"HS {hs}", started_by=user.id, message="Queued")
     db.add(run)
     db.commit()
     tasks.add_task(trade.refresh_hs, run.id, hs)
     return _run_out(run)
+
+
+def _coverage(db) -> dict[str, tuple[str, RefreshRun | None]]:
+    """State of each catalogue HS code: loaded, active (queued/running), failed or missing.
+
+    Jobs run inside the API process and startup marks orphaned runs as failed, so any
+    queued/running row is genuinely active."""
+    has_data = set(db.scalars(select(TradeObservation.hs_code).distinct()))
+    out = {}
+    for hs in sorted(set(db.scalars(select(Product.hs_code).distinct()))):
+        r = latest_run(db, hs)
+        if r and r.status in ACTIVE:
+            state = "active"
+        elif (r and r.status == "succeeded") or (r is None and hs in has_data):
+            state = "loaded"
+        elif r and r.status == "failed":
+            state = "failed"
+        else:
+            state = "missing"
+        out[hs] = (state, r)
+    return out
+
+
+@router.post("/refresh-missing", status_code=202)
+def refresh_missing(user: Analyst, db: DB, tasks: BackgroundTasks):
+    """Queue a refresh for every catalogue HS code that is not loaded and not already being refreshed."""
+    jobs, already = [], 0
+    for hs, (state, _) in _coverage(db).items():
+        if state == "active":
+            already += 1
+        elif state in ("missing", "failed"):
+            run = RefreshRun(
+                adapter="un_comtrade", scope=f"HS {hs}", started_by=user.id, status="queued", message="Queued"
+            )
+            db.add(run)
+            db.flush()
+            jobs.append((run.id, hs))
+    db.commit()
+    if jobs:
+        tasks.add_task(trade.refresh_many, jobs)
+    return {"queued": len(jobs), "already_active": already}
+
+
+@router.get("/status")
+def data_status(_: CurrentUser, db: DB):
+    """Trade-data coverage of the catalogue's HS codes, for the product catalogue page."""
+    cov = _coverage(db)
+    states = [state for state, _ in cov.values()]
+    return {
+        "hs_codes": len(cov),
+        "loaded": states.count("loaded"),
+        "failed": [hs for hs, (state, _) in cov.items() if state == "failed"],
+        "active": [
+            {"hs_code": hs, "status": r.status, "message": r.message}
+            for hs, (state, r) in cov.items()
+            if state == "active"
+        ],
+    }
 
 
 @router.get("/runs/{run_id}")

@@ -26,6 +26,12 @@ export function WorkspaceHeader({ product, title, subtitle, actions, hasData }: 
           {product ? (
             <div className="mb-1 flex flex-wrap items-center gap-2 text-xs font-semibold tracking-wider text-brand-700 uppercase">
               <span>{product.name}</span>
+              {product.pack_size && (
+                <>
+                  <span className="text-slate-300">·</span>
+                  <span className="tracking-normal normal-case">{product.pack_size}</span>
+                </>
+              )}
               <span className="text-slate-300">·</span>
               <span className="font-mono tracking-normal">HS {product.hs_code}</span>
             </div>

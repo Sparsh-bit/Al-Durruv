@@ -1,10 +1,13 @@
 import io
 import re
+from typing import Literal
 
 import pandas as pd
 from fastapi import APIRouter, HTTPException, UploadFile
+from fastapi.responses import Response
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, or_, select
+from sqlalchemy.orm import Session
 
 from app.models import HSCode, Product, TradeObservation
 from app.security import DB, Analyst, CurrentUser
@@ -12,6 +15,33 @@ from app.security import DB, Analyst, CurrentUser
 router = APIRouter(prefix="/api", tags=["catalogue"])
 MAX_UPLOAD = 5 * 1024 * 1024
 REQUIRED = {"sku", "name", "hs_code"}
+TEXT_COLUMNS = (
+    "brand",
+    "category",
+    "pack_size",
+    "net_unit",
+    "packaging",
+    "catalogue_page",
+    "description",
+    "notes",
+    "hs_note",
+)
+EXPORT_COLUMNS = [
+    "sku",
+    "name",
+    "brand",
+    "category",
+    "hs_code",
+    "hs_status",
+    "pack_size",
+    "net_quantity",
+    "net_unit",
+    "packaging",
+    "catalogue_page",
+    "description",
+    "hs_note",
+    "notes",
+]
 
 
 def normalize_hs(raw: object) -> str:
@@ -28,8 +58,17 @@ class ProductIn(BaseModel):
     sku: str = Field(min_length=1, max_length=64)
     name: str = Field(min_length=1, max_length=255)
     hs_code: str
-    description: str = ""
-    category: str = ""
+    hs_status: Literal["suggested", "confirmed"] = "suggested"
+    hs_note: str = Field("", max_length=2000)
+    description: str = Field("", max_length=4000)
+    category: str = Field("", max_length=120)
+    brand: str = Field("", max_length=120)
+    pack_size: str = Field("", max_length=80)
+    net_quantity: float | None = Field(None, gt=0)
+    net_unit: Literal["", "g", "kg", "ml", "L"] = ""
+    packaging: str = Field("", max_length=80)
+    catalogue_page: str = Field("", max_length=40, pattern=r"^[0-9, ]*$")
+    notes: str = Field("", max_length=4000)
 
     @field_validator("hs_code")
     @classmethod
@@ -40,14 +79,28 @@ class ProductIn(BaseModel):
         return code
 
 
+def pages(p: Product) -> list[int]:
+    return [int(x) for x in re.findall(r"\d+", p.catalogue_page or "")]
+
+
 def _out(p: Product, has_data: bool = False) -> dict:
     return {
         "id": p.id,
         "sku": p.sku,
         "name": p.name,
+        "brand": p.brand,
         "description": p.description,
         "category": p.category,
+        "pack_size": p.pack_size,
+        "net_quantity": p.net_quantity,
+        "net_unit": p.net_unit,
+        "packaging": p.packaging,
+        "catalogue_page": p.catalogue_page,
+        "catalogue_pages": pages(p),
+        "notes": p.notes,
         "hs_code": p.hs_code,
+        "hs_status": p.hs_status,
+        "hs_note": p.hs_note,
         "hs_description": p.hs.description if p.hs else "",
         "has_trade_data": has_data,
     }
@@ -66,7 +119,19 @@ def search_hs(_: CurrentUser, db: DB, q: str = "", limit: int = 20):
 @router.get("/products")
 def list_products(_: CurrentUser, db: DB):
     with_data = set(db.scalars(select(TradeObservation.hs_code).distinct()))
-    return [_out(p, p.hs_code in with_data) for p in db.scalars(select(Product).order_by(Product.name))]
+    stmt = select(Product).order_by(Product.category, Product.name, Product.net_quantity)
+    return [_out(p, p.hs_code in with_data) for p in db.scalars(stmt)]
+
+
+@router.get("/products/export")
+def export_products(_: CurrentUser, db: DB):
+    rows = [{c: getattr(p, c) for c in EXPORT_COLUMNS} for p in db.scalars(select(Product).order_by(Product.sku))]
+    csv = pd.DataFrame(rows, columns=EXPORT_COLUMNS).to_csv(index=False)
+    return Response(
+        csv.encode("utf-8-sig"),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="product-catalogue.csv"'},
+    )
 
 
 @router.get("/products/{product_id}")
@@ -138,6 +203,19 @@ async def import_products(file: UploadFile, _: Analyst, db: DB):
     except Exception:
         raise HTTPException(422, "The file could not be read. Check it is a valid CSV or Excel file.") from None
 
+    return apply_catalogue(db, df)
+
+
+def _net_quantity(raw: str) -> float | None:
+    try:
+        v = float(raw)
+    except ValueError:
+        return None
+    return v if v > 0 else None
+
+
+def apply_catalogue(db: Session, df: pd.DataFrame) -> dict:
+    """Create or update products from a catalogue table; rows are validated one by one."""
     df.columns = [str(c).strip().lower().replace(" ", "_") for c in df.columns]
     missing = REQUIRED - set(df.columns)
     if missing:
@@ -146,22 +224,29 @@ async def import_products(file: UploadFile, _: Analyst, db: DB):
     valid_hs = set(db.scalars(select(HSCode.code)))
     created = updated = 0
     errors: list[dict] = []
-    for i, row in df.fillna("").iterrows():
+    seen: set[str] = set()
+    for i, row in df.fillna("").astype(str).iterrows():
         line = int(i) + 2  # header is line 1
-        sku, pname, hs = str(row["sku"]).strip(), str(row["name"]).strip(), normalize_hs(row["hs_code"])
+        sku, pname, hs = row["sku"].strip(), row["name"].strip(), normalize_hs(row["hs_code"])
         if not sku or not pname:
             errors.append({"line": line, "error": "sku and name are required"})
+            continue
+        if sku in seen:
+            errors.append({"line": line, "error": f"duplicate SKU '{sku}' in file"})
             continue
         if hs not in valid_hs:
             errors.append({"line": line, "error": f"invalid HS code '{row['hs_code']}'"})
             continue
-        fields = {
-            "name": pname,
-            "hs_code": hs,
-            "description": str(row.get("description", "")).strip(),
-            "category": str(row.get("category", "")).strip(),
-        }
+        seen.add(sku)
+        fields = {"name": pname[:255], "hs_code": hs}
+        fields.update({c: row[c].strip() for c in TEXT_COLUMNS if c in row})
+        if "net_quantity" in row:
+            fields["net_quantity"] = _net_quantity(row["net_quantity"].strip())
+        if row.get("hs_status", "").strip().lower() in ("suggested", "confirmed"):
+            fields["hs_status"] = row["hs_status"].strip().lower()
         p = db.scalar(select(Product).where(Product.sku == sku))
+        if p and p.hs_code != hs and "hs_status" not in fields:
+            fields["hs_status"] = "suggested"  # a changed code is no longer the confirmed one
         if p:
             for k, v in fields.items():
                 setattr(p, k, v)

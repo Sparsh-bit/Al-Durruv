@@ -26,7 +26,7 @@ import { WorkspaceHeader } from '../components/Workspace'
 import { api, post } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { date, dateTime, pct, tonnes, usd } from '../lib/format'
-import { useOverview, useProduct, useRun } from '../lib/hooks'
+import { isActive, useOverview, useProduct, useRun } from '../lib/hooks'
 import type { CountryDetail, Overview, Product, Quote, Provider, RankedMarket, Run, Weights } from '../lib/types'
 
 const DEFAULT_WEIGHTS: Weights = { market_size: 35, growth: 25, openness: 20, price_level: 10, data_quality: 10 }
@@ -41,12 +41,12 @@ const SHORT: Record<keyof Weights, string> = {
 function RefreshPanel({ hs, run, onStarted }: { hs: string; run: Run | null | undefined; onStarted: (r: Run) => void }) {
   const { can } = useAuth()
   const start = useMutation({ mutationFn: () => post<Run>(`/api/markets/${hs}/refresh`), onSuccess: onStarted })
-  const running = run?.status === 'running'
+  const running = isActive(run)
   return (
     <Card>
       <EmptyState
         icon={<Database className="size-6" />}
-        title={running ? 'Loading official trade statistics…' : 'No trade statistics loaded for this HS code'}
+        title={run?.status === 'queued' ? 'Queued: waiting for other HS codes to finish loading' : running ? 'Loading official trade statistics…' : 'No trade statistics loaded for this HS code'}
         action={
           running ? (
             <div className="w-72">
@@ -368,7 +368,7 @@ export default function Markets() {
   const hs = product.data?.hs_code
   const overview = useOverview(hs)
   const [runId, setRunId] = useState<number | null>(null)
-  const activeRunId = runId ?? (overview.data?.refresh?.status === 'running' ? overview.data.refresh.id : null)
+  const activeRunId = runId ?? (isActive(overview.data?.refresh) ? overview.data!.refresh!.id : null)
   const run = useRun(activeRunId, (r) => {
     qc.invalidateQueries({ queryKey: ['overview', hs] })
     qc.invalidateQueries({ queryKey: ['ranking', hs] })
@@ -399,7 +399,7 @@ export default function Markets() {
       ) : !ov.has_data ? (
         <RefreshPanel hs={ov.hs_code} run={run ?? ov.refresh} onStarted={(r) => setRunId(r.id)} />
       ) : (
-        <Dashboard ov={ov} product={product.data} refreshing={run?.status === 'running' || refresh.isPending} onRefresh={() => refresh.mutate()} />
+        <Dashboard ov={ov} product={product.data} refreshing={isActive(run) || refresh.isPending} onRefresh={() => refresh.mutate()} />
       )}
     </>
   )

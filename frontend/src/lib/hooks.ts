@@ -4,6 +4,8 @@ import { useParams } from 'react-router'
 import { api } from './api'
 import type { Overview, Product, Run } from './types'
 
+export const isActive = (r: Pick<Run, 'status'> | null | undefined) => r?.status === 'queued' || r?.status === 'running'
+
 export function useProduct() {
   const { productId } = useParams()
   return useQuery({
@@ -31,13 +33,13 @@ export function useRun(runId: number | null | undefined, onDone?: (run: Run) => 
     queryKey: ['run', runId],
     queryFn: () => api<Run>(`/api/markets/runs/${runId}`),
     enabled: Boolean(runId),
-    refetchInterval: (query) => (query.state.data?.status === 'running' ? 2000 : false),
+    refetchInterval: (query) => (isActive(query.state.data) ? 2000 : false),
     staleTime: 0,
   })
   const status = q.data?.status
   const notified = useRef<number | null>(null)
   useEffect(() => {
-    if (q.data && status !== 'running' && notified.current !== q.data.id) {
+    if (q.data && !isActive(q.data) && notified.current !== q.data.id) {
       notified.current = q.data.id
       done.current?.(q.data)
     }

@@ -5,11 +5,28 @@ export type Product = {
   id: number
   sku: string
   name: string
+  brand: string
   description: string
   category: string
+  pack_size: string
+  net_quantity: number | null
+  net_unit: '' | 'g' | 'kg' | 'ml' | 'L'
+  packaging: string
+  catalogue_page: string
+  catalogue_pages: number[]
+  notes: string
   hs_code: string
+  hs_status: 'suggested' | 'confirmed'
+  hs_note: string
   hs_description: string
   has_trade_data: boolean
+}
+
+export type DataStatus = {
+  hs_codes: number
+  loaded: number
+  failed: string[]
+  active: { hs_code: string; status: 'queued' | 'running'; message: string }[]
 }
 
 export type Source = { id: number; url: string; retrieved_at: string; period?: string; adapter?: string; title?: string }
@@ -18,7 +35,7 @@ export type Run = {
   id: number
   adapter: string
   scope: string
-  status: 'running' | 'succeeded' | 'failed'
+  status: 'queued' | 'running' | 'succeeded' | 'failed'
   rows: number
   message: string
   error: string

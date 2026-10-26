@@ -31,3 +31,7 @@ export const hostname = (url: string) => {
     return url
   }
 }
+
+/** Catalogue page image served by the API (thumb = small preview). */
+export const pageImage = (n: number, thumb = false) =>
+  `/api/static/catalogue/${thumb ? 'thumbs/' : ''}p${String(n).padStart(2, '0')}.jpg`

@@ -14,7 +14,7 @@ const STATUS: Record<string, { tone: 'green' | 'amber' | 'red'; text: string }> 
   not_configured: { tone: 'red', text: 'Not configured' },
   not_connected: { tone: 'amber', text: 'Not connected' },
 }
-const RUN_TONE = { running: 'blue', succeeded: 'green', failed: 'red' } as const
+const RUN_TONE = { queued: 'slate', running: 'blue', succeeded: 'green', failed: 'red' } as const
 
 function NewUser({ onDone }: { onDone: () => void }) {
   const qc = useQueryClient()

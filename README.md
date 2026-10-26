@@ -33,7 +33,7 @@ cd ../frontend && npm install
 ## Run
 
 ```bash
-cd backend && uv run uvicorn app.main:app --port 8000 --reload --reload-dir app
+cd backend && uv run uvicorn app.main:app --port 8000 --reload --reload-dir app --timeout-graceful-shutdown 5
 cd frontend && npm run dev      # http://localhost:5173 (proxies /api to :8000)
 ```
 
