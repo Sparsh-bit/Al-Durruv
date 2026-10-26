@@ -1,0 +1,12 @@
+{
+  "name": "al-durrab-trade-intel",
+  "private": true,
+  "scripts": {
+    "build": "npm --prefix frontend run build",
+    "dev:web": "npm --prefix frontend run dev"
+  },
+  "dependencies": {
+    "@neon/config": "^1.9.4",
+    "@neon/env": "^1.6.5"
+  }
+}

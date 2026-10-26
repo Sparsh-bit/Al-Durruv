@@ -43,8 +43,8 @@ def main(replace_products: bool = False) -> None:
         else:
             print(f"HS codes loaded: {load_hs_codes(db)}")
         if not db.scalar(select(User).where(User.role == Role.admin)):
-            if len(s.admin_password) < 10:
-                raise SystemExit("Set ADMIN_PASSWORD (10+ characters) in .env before seeding.")
+            if len(s.admin_password) < 8:
+                raise SystemExit("Set ADMIN_PASSWORD (8+ characters) before seeding.")
             db.add(
                 User(
                     email=s.admin_email.lower(),

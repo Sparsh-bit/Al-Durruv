@@ -8,12 +8,12 @@ with the API on the same domain. Neon provides PostgreSQL.
 1. Create project → **Region: AWS Asia Pacific 1 (Singapore)** (same region as the Railway service).
 2. Services: keep **Postgres database** only. Turn **off** Functions, AI gateway, Realtime and Better Auth
    (the app has its own login and calls Claude directly). Object storage: off.
-3. Open **Connect** → choose the **direct** connection string (host *without* `-pooler`) and copy it.
-   It looks like `postgresql://neondb_owner:…@ep-xxxx.ap-southeast-1.aws.neon.tech/neondb?sslmode=require`.
-   (The pooled string also works; the app disables prepared statements for it automatically.)
+3. The project is linked in this repo (`neon.ts`, project `crimson-moon-36265168`, branch `production`).
+   `neon env pull` writes `DATABASE_URL` (pooled) and `DATABASE_URL_UNPOOLED` (direct); copy both into Railway.
+   The app uses the pooled URL (prepared statements disabled for PgBouncer); Alembic uses the direct one.
 
-The app creates all tables itself on first start (Alembic migrations) and loads the HS list, the admin user
-and the 127 Durra products.
+The production branch already holds the schema, the 127 Durra products, the loaded trade data, researched
+companies and the admin account. On each start the app runs pending migrations; the seed skips what exists.
 
 ## 2. Railway (app)
 
@@ -40,10 +40,11 @@ Deploy. The first start takes about a minute (migrations + HS list). Open the ge
 | Variable | Required | Value |
 |---|---|---|
 | `ENVIRONMENT` | yes | `production` (already set in the image; harmless to set again) |
-| `DATABASE_URL` | yes | Neon connection string from step 1.3 (paste as-is) |
+| `DATABASE_URL` | yes | Neon **pooled** connection string (host contains `-pooler`), as written by `neon env pull` |
+| `DATABASE_URL_UNPOOLED` | yes | Neon **direct** connection string, used for migrations on start |
 | `JWT_SECRET` | yes | 64 random hex characters, e.g. output of `openssl rand -hex 32`. Never reuse the local one |
-| `ADMIN_EMAIL` | first deploy | Email for the first admin account |
-| `ADMIN_PASSWORD` | first deploy | Strong password, 10+ characters (only used when no admin exists yet) |
+| `ADMIN_EMAIL` | only for an empty database | First admin account (the Neon production branch already has `admin@aldurra.com`) |
+| `ADMIN_PASSWORD` | only for an empty database | 8+ characters; ignored once an admin exists |
 | `ANTHROPIC_API_KEY` | for AI | Your Claude API key |
 | `CLAUDE_MODEL` | no | `claude-haiku-5-5` (default; cheapest) |
 | `RESEARCH_MAX_SEARCHES` | no | `5` (web searches per research run; lower = cheaper) |

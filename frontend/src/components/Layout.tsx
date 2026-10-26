@@ -1,10 +1,11 @@
 import * as Menu from '@radix-ui/react-dropdown-menu'
 import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
-import { BarChart3, Boxes, Building2, ChevronDown, FileText, KanbanSquare, LogOut, Menu as MenuIcon, Settings2, Ship, Sparkles, X } from 'lucide-react'
+import { BarChart3, Boxes, Building2, ChevronDown, FileText, KanbanSquare, KeyRound, LogOut, Menu as MenuIcon, Settings2, Ship, Sparkles, X } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { NavLink, Outlet, useMatch } from 'react-router'
 import { api } from '../lib/api'
+import ChangePassword from './ChangePassword'
 import { useAuth } from '../lib/auth'
 import type { Product } from '../lib/types'
 
@@ -61,6 +62,7 @@ function Item({ to, icon, children, end }: { to: string; icon: ReactNode; childr
 
 function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const { user, can, logout } = useAuth()
+  const [pwOpen, setPwOpen] = useState(false)
   const productId = useMatch('/p/:productId/*')?.params.productId ?? lastProduct.get()
   useEffect(() => {
     if (productId) lastProduct.set(productId)
@@ -113,12 +115,16 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           <Menu.Portal>
             <Menu.Content side="top" align="start" sideOffset={6} className="z-50 w-56 rounded-xl border border-line bg-white p-1 shadow-pop">
               <div className="px-3 py-2 text-xs text-muted">{user?.email}</div>
+              <Menu.Item onSelect={() => setPwOpen(true)} className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-700 outline-none data-highlighted:bg-slate-100">
+                <KeyRound className="size-4" /> Change password
+              </Menu.Item>
               <Menu.Item onSelect={logout} className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-700 outline-none data-highlighted:bg-slate-100">
                 <LogOut className="size-4" /> Sign out
               </Menu.Item>
             </Menu.Content>
           </Menu.Portal>
         </Menu.Root>
+        <ChangePassword open={pwOpen} onOpenChange={setPwOpen} />
       </div>
     </nav>
   )

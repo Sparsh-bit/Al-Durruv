@@ -60,13 +60,29 @@ def me(user: CurrentUser) -> UserOut:
 class UserIn(BaseModel):
     email: EmailStr
     full_name: str = ""
-    password: str = Field(min_length=10)
+    password: str = Field(min_length=8, max_length=128)
     role: Role = Role.viewer
 
 
 class UserPatch(BaseModel):
     role: Role | None = None
     is_active: bool | None = None
+
+
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8, max_length=128)
+
+
+@router.post("/change-password", status_code=204)
+def change_password(body: PasswordChange, user: CurrentUser, db: DB):
+    if not verify_password(body.current_password, user.password_hash):
+        raise HTTPException(400, "Current password is incorrect.")
+    if body.new_password == body.current_password:
+        raise HTTPException(400, "Choose a password different from the current one.")
+    user.password_hash = hash_password(body.new_password)
+    audit.record(db, user, "change_password", "user", user.id)
+    db.commit()
 
 
 @router.get("/users")

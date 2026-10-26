@@ -4,6 +4,7 @@ import os
 os.environ["DATABASE_URL"] = os.environ.get(
     "TEST_DATABASE_URL", "postgresql+psycopg://trade:trade@localhost:5433/trade_intel_test"
 )
+os.environ["DATABASE_URL_UNPOOLED"] = ""
 os.environ["ANTHROPIC_API_KEY"] = ""
 os.environ["COMTRADE_MIN_INTERVAL_S"] = "0"
 os.environ["HOME_COUNTRY_ISO3"] = ""

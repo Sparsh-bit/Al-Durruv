@@ -625,3 +625,31 @@ def test_security_headers_and_api_404():
     c = TestClient(app)
     r = c.get("/api/health")
     assert r.headers["x-content-type-options"] == "nosniff" and r.headers["cache-control"] == "no-store"
+
+
+def test_change_password(viewer):
+    from tests.conftest import PASSWORD
+
+    assert (
+        viewer.post(
+            "/api/auth/change-password", json={"current_password": "wrong", "new_password": "newpass99"}
+        ).status_code
+        == 400
+    )
+    assert (
+        viewer.post(
+            "/api/auth/change-password", json={"current_password": PASSWORD, "new_password": "short"}
+        ).status_code
+        == 422
+    )
+    assert (
+        viewer.post(
+            "/api/auth/change-password", json={"current_password": PASSWORD, "new_password": "newpass99"}
+        ).status_code
+        == 204
+    )
+    anon = TestClient(app)
+    assert (
+        anon.post("/api/auth/login", data={"username": "viewer@example.com", "password": "newpass99"}).status_code
+        == 200
+    )

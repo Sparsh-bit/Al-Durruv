@@ -11,6 +11,8 @@ class Settings(BaseSettings):
 
     environment: str = "development"  # set to "production" on Railway
     database_url: str = "postgresql+psycopg://trade:trade@localhost:5433/trade_intel"
+    # Neon direct (non-pooled) URL for migrations; falls back to DATABASE_URL when empty.
+    database_url_unpooled: str = ""
     jwt_secret: str = DEV_JWT_SECRET
     jwt_ttl_minutes: int = 60 * 12
     cors_origins: str = "http://localhost:5173"
@@ -31,10 +33,12 @@ class Settings(BaseSettings):
     # ISO3 of the exporter's own country; enables "your country's share" in rankings.
     home_country_iso3: str = ""
 
-    @field_validator("database_url")
+    @field_validator("database_url", "database_url_unpooled")
     @classmethod
     def _psycopg_driver(cls, v: str) -> str:
         # Neon and Railway hand out postgres:// or postgresql:// URLs; SQLAlchemy needs the psycopg driver name.
+        if not v:
+            return v
         for prefix in ("postgres://", "postgresql://"):
             if v.startswith(prefix):
                 return "postgresql+psycopg://" + v[len(prefix) :]
