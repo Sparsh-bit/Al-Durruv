@@ -13,7 +13,7 @@ from app.analytics import DEFAULT_WEIGHTS, MarketInput, cagr, score_markets, uni
 from app.config import get_settings
 from app.db import SessionLocal
 from app.models import Country, HSCode, MarketOpportunity, RefreshRun, TradeObservation
-from app.services import settings
+from app.services import jobs, settings
 
 TOP_MARKETS_FOR_PARTNERS = 10  # each is one API call; keeps a refresh at ~13 calls
 MAX_QUOTA_WAITS = 6
@@ -72,7 +72,7 @@ def _store(db: Session, rows: list[dict], hs: str, src_id: int) -> int:
     return len(ovals)
 
 
-def _fetch(db: Session, run: RefreshRun, sleep=time.sleep, **kw) -> tuple[list[dict], object]:
+def _fetch(db: Session, run: RefreshRun, sleep=time.sleep, keepalive=None, **kw) -> tuple[list[dict], object]:
     """comtrade.fetch that waits out the free-tier call quota instead of failing the run."""
     for _ in range(MAX_QUOTA_WAITS):
         try:
@@ -82,61 +82,72 @@ def _fetch(db: Session, run: RefreshRun, sleep=time.sleep, **kw) -> tuple[list[d
             resume = (datetime.now(UTC) + timedelta(seconds=wait)).strftime("%H:%M")
             previous, run.message = run.message, f"Paused: UN Comtrade call quota used up, resumes about {resume} UTC"
             db.commit()
-            sleep(wait)
+            while wait > 0:  # sleep in slices so the heartbeat shows the job is still alive
+                step = min(60, wait)
+                sleep(step)
+                wait -= step
+                if keepalive:
+                    keepalive()
             run.message = previous
             db.commit()
     raise comtrade.ComtradeError("UN Comtrade quota still exhausted after waiting; try again later.")
 
 
-def _year_chunks(years: list[int], size: int = 2) -> list[list[int]]:
-    return [years[i : i + size] for i in range(0, len(years), size)]
-
-
-def _fetch_years(db: Session, run: RefreshRun, sleep, years: list[int], **kw) -> list[tuple[list[dict], object]]:
+def _fetch_years(
+    db: Session, run: RefreshRun, sleep, keepalive, years: list[int], **kw
+) -> list[tuple[list[dict], object]]:
     """Fetch several years in one request; if the response hits the record cap, split the years and retry."""
-    rows, src = _fetch(db, run, sleep, period=",".join(map(str, years)), **kw)
+    rows, src = _fetch(db, run, sleep, keepalive, period=",".join(map(str, years)), **kw)
     if len(rows) >= comtrade.max_records() and len(years) > 1:
         mid = len(years) // 2
-        return _fetch_years(db, run, sleep, years[:mid], **kw) + _fetch_years(db, run, sleep, years[mid:], **kw)
+        return _fetch_years(db, run, sleep, keepalive, years[:mid], **kw) + _fetch_years(
+            db, run, sleep, keepalive, years[mid:], **kw
+        )
     return [(rows, src)]
 
 
-def refresh_hs(run_id: int, hs: str, sleep=time.sleep) -> None:
+def refresh_hs(run_id: int, hs: str, sleep=time.sleep, keepalive=None) -> None:
     """Background job: imports/exports for all reporters, then who supplies each market.
 
     With a Comtrade subscription key: all years in one request per flow and the supplier breakdown of every
-    importing country in one more request (3 calls). Free preview: two years per request and the top
-    importers one by one, because each response is capped at 500 records.
+    importing country in one more request (3 calls). Free preview: one year per request (the preview
+    endpoint accepts a single period) and the top importers one by one (500 records per response).
     """
     keyed = bool(get_settings().comtrade_subscription_key)
+    keepalive = keepalive or (lambda: jobs.beat([run_id]))
     years = _years()
     with SessionLocal() as db:
         run = db.get(RefreshRun, run_id)
-        run.status, run.started_at = "running", datetime.now(UTC)
+        run.status, run.started_at, run.heartbeat_at = "running", datetime.now(UTC), datetime.now(UTC)
         db.commit()
         try:
             total = 0
             for flow in ("M", "X"):
                 label = "imports" if flow == "M" else "exports"
-                for chunk in [years] if keyed else _year_chunks(years):
+                for chunk in [years] if keyed else [[y] for y in years]:
                     run.message = f"Fetching {label} {chunk[0]}–{chunk[-1]}"
                     db.commit()
-                    for rows, src in _fetch_years(db, run, sleep, chunk, cmd=hs, flow=flow, partner=WORLD):
+                    keepalive()
+                    for rows, src in _fetch_years(db, run, sleep, keepalive, chunk, cmd=hs, flow=flow, partner=WORLD):
                         total += _store(db, rows, hs, src.id)
                     run.rows = total
                     db.commit()
             if keyed:
                 run.message = "Supplier breakdown for every importing country"
                 db.commit()
+                keepalive()
                 for rows, src in _fetch_years(
-                    db, run, sleep, years[-2:], cmd=hs, flow="M", reporter=None, partner=None
+                    db, run, sleep, keepalive, years[-2:], cmd=hs, flow="M", reporter=None, partner=None
                 ):
                     total += _store(db, rows, hs, src.id)
             else:
                 for i, (m49, year) in enumerate(_top_importers(db, hs, TOP_MARKETS_FOR_PARTNERS)):
                     run.message = f"Supplier breakdown {i + 1}/{TOP_MARKETS_FOR_PARTNERS}"
                     db.commit()
-                    rows, src = _fetch(db, run, sleep, period=year, cmd=hs, flow="M", reporter=m49, partner=None)
+                    keepalive()
+                    rows, src = _fetch(
+                        db, run, sleep, keepalive, period=year, cmd=hs, flow="M", reporter=m49, partner=None
+                    )
                     total += _store(db, rows, hs, src.id)
             run.rows = total
             db.commit()
@@ -150,10 +161,11 @@ def refresh_hs(run_id: int, hs: str, sleep=time.sleep) -> None:
         db.commit()
 
 
-def refresh_many(jobs: list[tuple[int, str]]) -> None:
+def refresh_many(batch: list[tuple[int, str]]) -> None:
     """Run queued refreshes one after another so the shared Comtrade rate limit is respected."""
-    for run_id, hs in jobs:
-        refresh_hs(run_id, hs)
+    for i, (run_id, hs) in enumerate(batch):
+        waiting = [rid for rid, _ in batch[i:]]
+        refresh_hs(run_id, hs, keepalive=lambda ids=waiting: jobs.beat(ids))  # keeps queued siblings alive too
 
 
 def _world_series(db: Session, hs: str, flow: str) -> dict[int, dict[int, TradeObservation]]:

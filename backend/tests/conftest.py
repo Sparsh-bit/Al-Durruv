@@ -7,6 +7,7 @@ os.environ["DATABASE_URL"] = os.environ.get(
 os.environ["DATABASE_URL_UNPOOLED"] = ""
 os.environ["ANTHROPIC_API_KEY"] = ""
 os.environ["COMTRADE_MIN_INTERVAL_S"] = "0"
+os.environ["COMTRADE_SUBSCRIPTION_KEY"] = ""  # tests never use real credentials
 os.environ["HOME_COUNTRY_ISO3"] = ""
 
 import pytest  # noqa: E402

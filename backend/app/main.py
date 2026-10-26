@@ -1,6 +1,5 @@
 import logging
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -8,12 +7,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import text, update
+from sqlalchemy import text
 
 from app.config import get_settings
 from app.db import SessionLocal
-from app.models import RefreshRun
 from app.routers import admin, ai, auth, catalogue, companies, markets, reports
+from app.services import jobs
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("trade_intel")
@@ -21,21 +20,12 @@ log = logging.getLogger("trade_intel")
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    # Background jobs run in this process, so none survive a restart: release their runs for re-queuing.
+    # Jobs left behind by stopped processes are marked failed; live jobs of other processes
+    # (rolling deploy, a second machine on the same database) keep running.
     with SessionLocal() as db:
-        n = db.execute(
-            update(RefreshRun)
-            .where(RefreshRun.status.in_(("queued", "running")))
-            .values(
-                status="failed",
-                error="Interrupted by a server restart. Start the refresh again.",
-                message="Interrupted",
-                finished_at=datetime.now(UTC),
-            )
-        ).rowcount
-        db.commit()
+        n = jobs.sweep(db)
     if n:
-        log.warning("Marked %d interrupted refresh runs as failed", n)
+        log.warning("Marked %d abandoned background jobs as failed", n)
     yield
 
 

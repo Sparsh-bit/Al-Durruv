@@ -263,6 +263,9 @@ class RefreshRun(Base):
     error: Mapped[str] = mapped_column(Text, default="")
     started_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     started_at: Mapped[datetime] = _now()
+    heartbeat_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=True
+    )
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 

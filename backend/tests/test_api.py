@@ -426,8 +426,8 @@ def test_refresh_pauses_on_quota_then_completes(db, monkeypatch):
     db.expire_all()
     run = db.get(RefreshRun, run_id)
     assert run.status == "succeeded", run.error
-    assert slept == [180]  # waited out the quota (+60 s margin) once
-    assert "2020,2021" in state["periods"] and "2022,2023" in state["periods"]  # two years per request
+    assert sum(slept) == 180 and max(slept) <= 60  # waited out the quota (+60 s), in heartbeat-sized slices
+    assert state["periods"][:4] == ["2020", "2021", "2022", "2023"]  # preview endpoint: one year per request
 
 
 def test_refresh_splits_years_when_response_hits_record_cap(db, monkeypatch):
@@ -438,9 +438,13 @@ def test_refresh_splits_years_when_response_hits_record_cap(db, monkeypatch):
 
     def fake_fetch(db_, **kw):
         periods.append(str(kw["period"]))
-        rows = ROWS * comtrade.MAX_RECORDS if "," in str(kw["period"]) else ROWS
+        rows = ROWS * 3 if "," in str(kw["period"]) else ROWS
         return real_fetch(db_, caller=lambda params, key: rows if kw.get("partner") == 0 else [], **kw)
 
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "comtrade_subscription_key", "test-key")
+    monkeypatch.setattr(comtrade, "max_records", lambda: 3)  # a 3-row response counts as truncated
     monkeypatch.setattr(comtrade, "fetch", fake_fetch)
     monkeypatch.setattr(trade, "_years", lambda: [2022, 2023])
     run_id = _start_run(db)
@@ -693,3 +697,30 @@ def test_bulk_store_dedupes_rows_within_a_response(db):
     assert trade._store(db, dup, "190531", src.id) == 1
     db.commit()
     assert db.scalar(select(TradeObservation.value_usd)) == 2.0
+
+
+def test_heartbeat_decides_liveness_not_restarts(db, analyst):
+    from datetime import UTC, datetime, timedelta
+
+    from app.models import RefreshRun
+    from app.services import jobs
+
+    fresh = RefreshRun(adapter="un_comtrade", scope="HS 190531", status="running", heartbeat_at=datetime.now(UTC))
+    stale = RefreshRun(
+        adapter="un_comtrade",
+        scope="HS 090111",
+        status="queued",
+        heartbeat_at=datetime.now(UTC) - timedelta(minutes=10),
+    )
+    db.add_all([fresh, stale])
+    db.commit()
+    assert jobs.is_live(fresh) and not jobs.is_live(stale)
+    # another process starting up must not cancel a live job, only the abandoned one
+    assert jobs.sweep(db) == 1
+    db.expire_all()
+    assert db.get(RefreshRun, fresh.id).status == "running" and db.get(RefreshRun, stale.id).status == "failed"
+    # a live job blocks a duplicate refresh; the API reports a stale job as failed
+    assert analyst.post("/api/markets/190531/refresh").json()["id"] == fresh.id
+    jobs.beat([fresh.id])
+    db.expire_all()
+    assert jobs.is_live(db.get(RefreshRun, fresh.id))

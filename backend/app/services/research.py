@@ -23,7 +23,7 @@ from app.ai import claude, usage
 from app.analytics import prospect_score
 from app.db import SessionLocal
 from app.models import Company, CompanyEvidence, Country, HSCode, Product, RefreshRun, SourceRecord
-from app.services import settings, trade
+from app.services import jobs, settings, trade
 
 log = logging.getLogger("trade_intel.research")
 KINDS = {"buyers": "buyer", "competitors": "competitor", "suppliers": "supplier"}
@@ -214,7 +214,7 @@ def run_research(
 ) -> None:
     with SessionLocal() as db:
         run = db.get(RefreshRun, run_id)
-        run.status, run.started_at = "running", datetime.now(UTC)
+        run.status, run.started_at, run.heartbeat_at = "running", datetime.now(UTC), datetime.now(UTC)
         db.commit()
         try:
             country = db.get(Country, country_m49)
@@ -236,6 +236,7 @@ def run_research(
 
             run.message = f"Checking {len(kept)} source pages"
             db.commit()
+            jobs.beat([run_id])
             with ThreadPoolExecutor(max_workers=6) as pool:
                 checks = list(pool.map(lambda k: _name_on_page(k["source"]["url"], k["name"]), kept))
 

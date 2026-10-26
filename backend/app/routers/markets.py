@@ -9,10 +9,9 @@ from app.analytics import COMPONENT_LABELS, DEFAULT_WEIGHTS
 from app.config import get_settings
 from app.models import HSCode, MarketNews, Product, RefreshRun, TradeObservation
 from app.security import DB, Analyst, CurrentUser
-from app.services import audit, research, settings, trade
+from app.services import audit, jobs, research, settings, trade
 
 router = APIRouter(prefix="/api/markets", tags=["markets"])
-ACTIVE = ("queued", "running")
 
 
 def _run_out(r: RefreshRun | None) -> dict | None:
@@ -22,10 +21,10 @@ def _run_out(r: RefreshRun | None) -> dict | None:
         "id": r.id,
         "adapter": r.adapter,
         "scope": r.scope,
-        "status": r.status,
+        "status": jobs.effective_status(r),
         "rows": r.rows,
         "message": r.message,
-        "error": r.error,
+        "error": r.error or (jobs.INTERRUPTED if jobs.effective_status(r) != r.status else ""),
         "started_at": r.started_at.isoformat(),
         "finished_at": r.finished_at.isoformat() if r.finished_at else None,
     }
@@ -57,7 +56,7 @@ def overview(hs: str, _: CurrentUser, db: DB):
 def refresh(hs: str, user: Analyst, db: DB, tasks: BackgroundTasks):
     _hs(db, hs)
     running = latest_run(db, hs)
-    if running and running.status in ACTIVE:
+    if jobs.is_live(running):
         return _run_out(running)
     run = RefreshRun(adapter="un_comtrade", scope=f"HS {hs}", started_by=user.id, message="Queued")
     db.add(run)
@@ -75,11 +74,11 @@ def _coverage(db) -> dict[str, tuple[str, RefreshRun | None]]:
     out = {}
     for hs in sorted(set(db.scalars(select(Product.hs_code).distinct()))):
         r = latest_run(db, hs)
-        if r and r.status in ACTIVE:
+        if jobs.is_live(r):
             state = "active"
         elif (r and r.status == "succeeded") or (r is None and hs in has_data):
             state = "loaded"
-        elif r and r.status == "failed":
+        elif r and jobs.effective_status(r) == "failed":
             state = "failed"
         else:
             state = "missing"

@@ -14,7 +14,7 @@ from app.config import get_settings
 from app.models import Company, Country, HSCode, ProspectList, ProspectListItem, RefreshRun, ReviewStatus
 from app.routers.markets import _run_out
 from app.security import DB, Analyst, CurrentUser
-from app.services import audit, research
+from app.services import audit, jobs, research
 
 router = APIRouter(prefix="/api", tags=["companies"])
 Relationship = Literal["buyer", "competitor", "supplier"]
@@ -191,7 +191,7 @@ def start_research(body: ResearchIn, user: Analyst, db: DB, tasks: BackgroundTas
         .order_by(RefreshRun.id.desc())
         .limit(1)
     )
-    if prev and prev.status in ("queued", "running"):
+    if jobs.is_live(prev):
         return _run_out(prev)
     recent = prev and datetime.now(UTC) - prev.started_at < timedelta(days=7)
     if prev and prev.status == "succeeded" and recent and not body.force:
