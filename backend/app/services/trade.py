@@ -25,8 +25,13 @@ def _years() -> list[int]:
     return list(range(this_year - get_settings().trade_years_back, this_year))
 
 
+BATCH = 1000
+
+
 def _store(db: Session, rows: list[dict], hs: str, src_id: int) -> int:
-    n = 0
+    """Upsert observations in batches (one round-trip per 1,000 rows, which matters on a remote database)."""
+    countries: dict[int, dict] = {}
+    obs: dict[tuple, dict] = {}  # keyed by the unique constraint so a batch never hits the same row twice
     for r in rows:
         if r.get("primaryValue") is None or r.get("reporterCode") is None:
             continue
@@ -34,34 +39,37 @@ def _store(db: Session, rows: list[dict], hs: str, src_id: int) -> int:
             (r["reporterCode"], r.get("reporterISO"), r.get("reporterDesc")),
             (r.get("partnerCode"), r.get("partnerISO"), r.get("partnerDesc")),
         ):
-            if code is None or int(code) == WORLD:
-                continue
-            db.execute(
-                insert(Country).values(m49=int(code), iso3=iso or "", name=name or str(code)).on_conflict_do_nothing()
-            )
+            if code is not None and int(code) != WORLD:
+                countries[int(code)] = {"m49": int(code), "iso3": iso or "", "name": name or str(code)}
         kg = r.get("netWgt")
-        values = dict(
+        key = (int(r["reporterCode"]), int(r.get("partnerCode") or 0), hs, r["flowCode"], int(r["refYear"]))
+        obs[key] = dict(
+            reporter_m49=key[0],
+            partner_m49=key[1],
+            hs_code=hs,
+            flow=key[3],
+            year=key[4],
             value_usd=float(r["primaryValue"]),
             net_weight_kg=float(kg) if kg else None,
             qty=r.get("qty"),
             qty_unit=r.get("qtyUnitAbbr") or "",
             source_record_id=src_id,
         )
-        stmt = insert(TradeObservation).values(
-            reporter_m49=int(r["reporterCode"]),
-            partner_m49=int(r.get("partnerCode") or 0),
-            hs_code=hs,
-            flow=r["flowCode"],
-            year=int(r["refYear"]),
-            **values,
-        )
+    cvals = list(countries.values())
+    for i in range(0, len(cvals), BATCH):
+        db.execute(insert(Country).values(cvals[i : i + BATCH]).on_conflict_do_nothing())
+    ovals = list(obs.values())
+    for i in range(0, len(ovals), BATCH):
+        stmt = insert(TradeObservation).values(ovals[i : i + BATCH])
         db.execute(
             stmt.on_conflict_do_update(
-                index_elements=["reporter_m49", "partner_m49", "hs_code", "flow", "year"], set_=values
+                index_elements=["reporter_m49", "partner_m49", "hs_code", "flow", "year"],
+                set_={
+                    c: stmt.excluded[c] for c in ("value_usd", "net_weight_kg", "qty", "qty_unit", "source_record_id")
+                },
             )
         )
-        n += 1
-    return n
+    return len(ovals)
 
 
 def _fetch(db: Session, run: RefreshRun, sleep=time.sleep, **kw) -> tuple[list[dict], object]:
@@ -84,8 +92,24 @@ def _year_chunks(years: list[int], size: int = 2) -> list[list[int]]:
     return [years[i : i + size] for i in range(0, len(years), size)]
 
 
+def _fetch_years(db: Session, run: RefreshRun, sleep, years: list[int], **kw) -> list[tuple[list[dict], object]]:
+    """Fetch several years in one request; if the response hits the record cap, split the years and retry."""
+    rows, src = _fetch(db, run, sleep, period=",".join(map(str, years)), **kw)
+    if len(rows) >= comtrade.max_records() and len(years) > 1:
+        mid = len(years) // 2
+        return _fetch_years(db, run, sleep, years[:mid], **kw) + _fetch_years(db, run, sleep, years[mid:], **kw)
+    return [(rows, src)]
+
+
 def refresh_hs(run_id: int, hs: str, sleep=time.sleep) -> None:
-    """Background job: pull imports/exports for all reporters, then supplier detail for top markets."""
+    """Background job: imports/exports for all reporters, then who supplies each market.
+
+    With a Comtrade subscription key: all years in one request per flow and the supplier breakdown of every
+    importing country in one more request (3 calls). Free preview: two years per request and the top
+    importers one by one, because each response is capped at 500 records.
+    """
+    keyed = bool(get_settings().comtrade_subscription_key)
+    years = _years()
     with SessionLocal() as db:
         run = db.get(RefreshRun, run_id)
         run.status, run.started_at = "running", datetime.now(UTC)
@@ -94,27 +118,28 @@ def refresh_hs(run_id: int, hs: str, sleep=time.sleep) -> None:
             total = 0
             for flow in ("M", "X"):
                 label = "imports" if flow == "M" else "exports"
-                for chunk in _year_chunks(_years()):
+                for chunk in [years] if keyed else _year_chunks(years):
                     run.message = f"Fetching {label} {chunk[0]}–{chunk[-1]}"
                     db.commit()
-                    period = ",".join(map(str, chunk))
-                    rows, src = _fetch(db, run, sleep, period=period, cmd=hs, flow=flow, partner=WORLD)
-                    if len(rows) >= comtrade.MAX_RECORDS and len(chunk) > 1:
-                        # response hit the record cap and may be truncated: fetch each year on its own
-                        fetched = [_fetch(db, run, sleep, period=y, cmd=hs, flow=flow, partner=WORLD) for y in chunk]
-                    else:
-                        fetched = [(rows, src)]
-                    for rows_, src_ in fetched:
-                        total += _store(db, rows_, hs, src_.id)
+                    for rows, src in _fetch_years(db, run, sleep, chunk, cmd=hs, flow=flow, partner=WORLD):
+                        total += _store(db, rows, hs, src.id)
                     run.rows = total
                     db.commit()
-            for i, (m49, year) in enumerate(_top_importers(db, hs, TOP_MARKETS_FOR_PARTNERS)):
-                run.message = f"Supplier breakdown {i + 1}/{TOP_MARKETS_FOR_PARTNERS}"
+            if keyed:
+                run.message = "Supplier breakdown for every importing country"
                 db.commit()
-                rows, src = _fetch(db, run, sleep, period=year, cmd=hs, flow="M", reporter=m49, partner=None)
-                total += _store(db, rows, hs, src.id)
-                run.rows = total
-                db.commit()
+                for rows, src in _fetch_years(
+                    db, run, sleep, years[-2:], cmd=hs, flow="M", reporter=None, partner=None
+                ):
+                    total += _store(db, rows, hs, src.id)
+            else:
+                for i, (m49, year) in enumerate(_top_importers(db, hs, TOP_MARKETS_FOR_PARTNERS)):
+                    run.message = f"Supplier breakdown {i + 1}/{TOP_MARKETS_FOR_PARTNERS}"
+                    db.commit()
+                    rows, src = _fetch(db, run, sleep, period=year, cmd=hs, flow="M", reporter=m49, partner=None)
+                    total += _store(db, rows, hs, src.id)
+            run.rows = total
+            db.commit()
             snapshot_ranking(db, hs)
             run.status, run.message = "succeeded", f"Stored {total} observations"
         except Exception as exc:
@@ -320,12 +345,19 @@ def country_detail(db: Session, hs: str, m49: int) -> dict | None:
 
 def ranking(db: Session, hs: str, weights: dict[str, float] | None = None, min_value_usd: float = 1e6) -> list[dict]:
     countries = _countries(db)
+    supplier_rows: dict[tuple[int, int], list[TradeObservation]] = defaultdict(list)
+    for o in db.scalars(
+        select(TradeObservation).where(
+            TradeObservation.hs_code == hs, TradeObservation.flow == "M", TradeObservation.partner_m49 != WORLD
+        )
+    ):
+        supplier_rows[(o.reporter_m49, o.year)].append(o)
     inputs, src = [], {}
     for m49, ys in _world_series(db, hs, "M").items():
         year = max(ys)
         if ys[year].value_usd < min_value_usd or m49 not in countries:
             continue
-        partners = _partners(db, hs, m49, year)
+        partners = supplier_rows.get((m49, year), [])
         inputs.append(
             MarketInput(
                 m49=m49,

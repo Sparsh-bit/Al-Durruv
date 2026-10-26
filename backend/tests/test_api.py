@@ -653,3 +653,43 @@ def test_change_password(viewer):
         anon.post("/api/auth/login", data={"username": "viewer@example.com", "password": "newpass99"}).status_code
         == 200
     )
+
+
+def test_keyed_refresh_uses_three_requests_and_covers_every_market(db, monkeypatch):
+    from app.config import get_settings
+    from app.models import RefreshRun
+
+    monkeypatch.setattr(get_settings(), "comtrade_subscription_key", "test-key")
+    real_fetch = comtrade.fetch
+    calls = []
+
+    def fake_fetch(db_, **kw):
+        calls.append((str(kw["period"]), kw["flow"], kw.get("reporter"), kw.get("partner")))
+        if kw.get("partner") == 0:
+            rows = [{**ROWS[0], "refYear": y, "flowCode": kw["flow"]} for y in map(int, str(kw["period"]).split(","))]
+        else:  # all reporters x all partners for the latest two years
+            rows = [{**ROWS[0], "refYear": 2025, "partnerCode": 484, "partnerISO": "MEX", "partnerDesc": "Mexico"}]
+        return real_fetch(db_, caller=lambda params, key: rows, **kw)
+
+    monkeypatch.setattr(comtrade, "fetch", fake_fetch)
+    monkeypatch.setattr(trade, "_years", lambda: [2020, 2021, 2022, 2023, 2024, 2025])
+    run_id = _start_run(db)
+    trade.refresh_hs(run_id, "190531", sleep=lambda s: None)
+    db.expire_all()
+    assert db.get(RefreshRun, run_id).status == "succeeded"
+    assert calls == [
+        ("2020,2021,2022,2023,2024,2025", "M", None, 0),
+        ("2020,2021,2022,2023,2024,2025", "X", None, 0),
+        ("2024,2025", "M", None, None),
+    ]
+    assert comtrade.max_records() == comtrade.MAX_RECORDS_KEYED
+
+
+def test_bulk_store_dedupes_rows_within_a_response(db):
+    src = SourceRecord(adapter="un_comtrade", url="https://comtradeapi.un.org/test", reporting_period="2023")
+    db.add(src)
+    db.flush()
+    dup = [{**ROWS[0], "primaryValue": 1.0}, {**ROWS[0], "primaryValue": 2.0}]  # same unique key twice
+    assert trade._store(db, dup, "190531", src.id) == 1
+    db.commit()
+    assert db.scalar(select(TradeObservation.value_usd)) == 2.0

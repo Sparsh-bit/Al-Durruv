@@ -18,8 +18,9 @@
 - **Client:** official `comtradeapicall` (MIT) wrapped by `backend/app/adapters/comtrade.py`.
 - **Mode:** free public preview API by default (no key, max 500 records/request). Set
   `COMTRADE_SUBSCRIPTION_KEY` to switch to the subscription endpoint automatically.
-- **Data pulled per HS6:** annual imports and exports, all reporters, partner World, last 6 years;
-  supplier-country breakdown for the 15 largest import markets.
+- **Data pulled per HS6:** annual imports and exports, all reporters, partner World, last 6 years.
+  Supplier-country breakdown: with a subscription key, every importing country (one request);
+  without a key, the 10 largest import markets.
 - **Resilience:** Postgres cache (7-day TTL, `api_cache`), 1.5 s minimum interval between calls,
   3 attempts with exponential backoff. The client prints errors and returns `None`; the adapter
   captures that output and raises `ComtradeError`, recorded in `refresh_runs`.

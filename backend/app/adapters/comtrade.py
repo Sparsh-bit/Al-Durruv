@@ -43,6 +43,11 @@ KEEP = (
 
 
 MAX_RECORDS = 500  # free preview cap per request
+MAX_RECORDS_KEYED = 100_000  # with a (free) subscription key
+
+
+def max_records() -> int:
+    return MAX_RECORDS_KEYED if get_settings().comtrade_subscription_key else MAX_RECORDS
 
 
 class ComtradeError(RuntimeError):
@@ -100,7 +105,7 @@ def _call(params: dict, key: str) -> list[dict]:
         partner2Code=None,
         customsCode=None,
         motCode=None,
-        maxRecords=MAX_RECORDS,
+        maxRecords=max_records(),
         format_output="JSON",
         aggregateBy=None,
         breakdownMode="classic",
@@ -149,6 +154,7 @@ def fetch(
     s = get_settings()
     params = {
         "period": str(period),
+        "maxRecords": max_records(),
         "cmdCode": cmd,
         "flowCode": flow,
         "reporterCode": None if reporter is None else str(reporter),

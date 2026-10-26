@@ -48,7 +48,7 @@ Deploy. The first start takes about a minute (migrations + HS list). Open the ge
 | `ANTHROPIC_API_KEY` | for AI | Your Claude API key |
 | `CLAUDE_MODEL` | no | `claude-haiku-5-5` (default; cheapest) |
 | `RESEARCH_MAX_SEARCHES` | no | `5` (web searches per research run; lower = cheaper) |
-| `COMTRADE_SUBSCRIPTION_KEY` | recommended | Free key from comtradeplus.un.org (much faster trade-data loading) |
+| `COMTRADE_SUBSCRIPTION_KEY` | recommended | **Primary** key from comtradeplus.un.org → My API portal. With it each product code loads in 3 requests (all years at once, supplier breakdown for every market) instead of ~13, within the free 500 requests/day. The Secondary key shares the same quota; keep it for rotation |
 | `HOME_COUNTRY_ISO3` | no | `SYR` (also editable in Administration) |
 
 `PORT` is provided by Railway; do not set it. `CORS_ORIGINS` and `VITE_API_URL` are not needed because the
