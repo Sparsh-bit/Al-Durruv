@@ -31,7 +31,7 @@ export function Button({
       {...rest}
       disabled={disabled || loading}
       className={clsx(
-        'inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-55',
+        'inline-flex shrink-0 items-center justify-center gap-2 rounded-lg font-medium whitespace-nowrap transition-colors disabled:cursor-not-allowed disabled:opacity-55',
         size === 'sm' ? 'h-8 px-3 text-[13px]' : 'h-9.5 px-4 text-sm',
         VARIANTS[variant],
         className,

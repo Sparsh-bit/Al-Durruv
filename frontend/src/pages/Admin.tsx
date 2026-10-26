@@ -2,11 +2,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, UserCheck, UserX } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { toast } from 'sonner'
-import { Badge, Button, Card, CardHeader, Field, Input, Modal, Notice, PageHeader, Select, Skeleton, Table, td, th } from '../components/ui'
-import { api, patch, post } from '../lib/api'
+import { Badge, Button, Card, CardHeader, Field, Input, Modal, Notice, PageHeader, Select, Skeleton, Table, Textarea, td, th } from '../components/ui'
+import { api, patch, post, put } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { dateTime, num } from '../lib/format'
-import type { Role, Run, User } from '../lib/types'
+import type { AppSettings, CompanyProfile, Role, Run, User } from '../lib/types'
 
 type Source = { key: string; name: string; status: string; detail: string; observations?: number; cached_responses?: number; companies?: number; last_run?: Run | null }
 const STATUS: Record<string, { tone: 'green' | 'amber' | 'red'; text: string }> = {
@@ -53,6 +53,186 @@ function NewUser({ onDone }: { onDone: () => void }) {
   )
 }
 
+type Usage = {
+  month_spend_usd: number
+  budget_usd: number
+  model: string
+  by_feature: { feature: string; calls: number; cost_usd: number; input_tokens: number; output_tokens: number; web_searches: number }[]
+  recent: { at: string; feature: string; model: string; input_tokens: number; output_tokens: number; cache_read_tokens: number; web_searches: number; cost_usd: number }[]
+}
+type AuditEntry = { at: string; user: string; action: string; entity: string; entity_id: string; detail: string }
+const FEATURE_LABEL: Record<string, string> = {
+  analyst: 'AI analyst questions',
+  market_brief: 'Market briefs',
+  company_brief: 'Company briefs',
+  market_news: 'Market news research',
+  research_buyers: 'Buyer research',
+  research_competitors: 'Competitor research',
+  research_suppliers: 'Supplier research',
+}
+
+function SettingsCard() {
+  const qc = useQueryClient()
+  const current = useQuery({ queryKey: ['app-settings'], queryFn: () => api<AppSettings>('/api/admin/settings') })
+  const countries = useQuery({ queryKey: ['countries'], queryFn: () => api<{ iso3: string; name: string }[]>('/api/countries') })
+  const [draft, setDraft] = useState<AppSettings | null>(null)
+  const [pick, setPick] = useState('')
+  const s = draft ?? current.data
+  const save = useMutation({
+    mutationFn: (body: AppSettings) => put<AppSettings>('/api/admin/settings', body),
+    onSuccess: (r) => {
+      qc.setQueryData(['app-settings'], r)
+      qc.invalidateQueries({ queryKey: ['ranking'] })
+      setDraft(null)
+      toast.success('Settings saved')
+    },
+  })
+  if (!s) return <Skeleton className="mb-8 h-64" />
+  const names = new Map((countries.data ?? []).map((c) => [c.iso3, c.name]))
+  const setProfile = (k: keyof CompanyProfile) => (e: { target: { value: string } }) =>
+    setDraft({ ...s, company_profile: { ...s.company_profile, [k]: e.target.value } })
+  const addMarkets = (raw: string) => {
+    const codes = raw.split(/[\s,;]+/).map((x) => x.trim().toUpperCase()).filter(Boolean)
+    const byName = new Map((countries.data ?? []).map((c) => [c.name.toUpperCase(), c.iso3]))
+    const resolved = codes.map((c) => (names.has(c) ? c : byName.get(c) ?? c))
+    setDraft({ ...s, export_markets: [...new Set([...s.export_markets, ...resolved])].sort() })
+    setPick('')
+  }
+  const submit = (e: FormEvent) => {
+    e.preventDefault()
+    save.mutate(s)
+  }
+  return (
+    <Card className="mb-8">
+      <CardHeader title="Company profile and markets" subtitle="Used by the AI to judge product fit and by the market ranking to separate existing from new markets." />
+      <form onSubmit={submit} className="space-y-5 p-5">
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Field label="Company name"><Input required value={s.company_profile.name} onChange={setProfile('name')} /></Field>
+          <Field label="Brand"><Input value={s.company_profile.brand} onChange={setProfile('brand')} /></Field>
+          <Field label="Home country (ISO3)" hint={names.get(s.company_profile.country_iso3.toUpperCase()) ?? 'e.g. SYR'}>
+            <Input required pattern="[A-Za-z]{3}" maxLength={3} value={s.company_profile.country_iso3} onChange={setProfile('country_iso3')} />
+          </Field>
+          <div className="sm:col-span-3">
+            <Field label="What we make and sell"><Textarea rows={3} maxLength={2000} value={s.company_profile.description} onChange={setProfile('description')} /></Field>
+          </div>
+          <Field label="Label languages" hint="Comma separated">
+            <Input value={s.company_profile.label_languages.join(', ')} onChange={(e) => setDraft({ ...s, company_profile: { ...s.company_profile, label_languages: e.target.value.split(',').map((x) => x.trim()).filter(Boolean) } })} />
+          </Field>
+          <Field label="Certifications" hint="Comma separated, e.g. Halal, ISO 22000">
+            <Input value={s.company_profile.certifications.join(', ')} onChange={(e) => setDraft({ ...s, company_profile: { ...s.company_profile, certifications: e.target.value.split(',').map((x) => x.trim()).filter(Boolean) } })} />
+          </Field>
+          <Field label="Monthly AI budget (USD)" hint="AI features pause when this is reached">
+            <Input type="number" min={0} step="1" value={s.ai_monthly_budget_usd} onChange={(e) => setDraft({ ...s, ai_monthly_budget_usd: Number(e.target.value) })} />
+          </Field>
+        </div>
+        <div>
+          <div className="mb-1.5 text-[13px] font-medium text-slate-700">Countries we already export to ({s.export_markets.length})</div>
+          <div className="flex flex-wrap gap-2">
+            <Input
+              className="max-w-sm"
+              list="country-options"
+              value={pick}
+              onChange={(e) => setPick(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  addMarkets(pick)
+                }
+              }}
+              placeholder="Type a country or paste ISO3 codes (DEU, SWE, …)"
+              aria-label="Add export market"
+            />
+            <datalist id="country-options">{(countries.data ?? []).map((c) => <option key={c.iso3} value={c.iso3}>{c.name}</option>)}</datalist>
+            <Button variant="secondary" onClick={() => addMarkets(pick)} disabled={!pick.trim()}>Add</Button>
+          </div>
+          {s.export_markets.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {s.export_markets.map((m) => (
+                <button key={m} type="button" onClick={() => setDraft({ ...s, export_markets: s.export_markets.filter((x) => x !== m) })} className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-700 hover:bg-red-50 hover:text-red-700" title="Remove">
+                  <span className="font-mono font-semibold">{m}</span> {names.get(m) ?? 'unknown code'} ×
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="flex justify-end gap-2 border-t border-line pt-4">
+          {draft && <Button variant="secondary" onClick={() => setDraft(null)}>Discard</Button>}
+          <Button type="submit" disabled={!draft} loading={save.isPending}>Save settings</Button>
+        </div>
+      </form>
+    </Card>
+  )
+}
+
+function UsageCard() {
+  const usage = useQuery({ queryKey: ['ai-usage'], queryFn: () => api<Usage>('/api/admin/ai-usage'), refetchInterval: 30_000 })
+  const u = usage.data
+  if (!u) return <Skeleton className="mb-8 h-40" />
+  const pct = u.budget_usd ? Math.min(100, (u.month_spend_usd / u.budget_usd) * 100) : 100
+  return (
+    <Card className="mb-8">
+      <CardHeader title="AI usage and cost" subtitle={`This month · model ${u.model} · costs estimated from token counts at list prices`} />
+      <div className="p-5">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <div className="tabular text-2xl font-semibold text-slate-900">${u.month_spend_usd.toFixed(2)} <span className="text-sm font-normal text-muted">of ${u.budget_usd.toFixed(2)} budget</span></div>
+          <span className="text-xs text-muted">{pct.toFixed(0)}% used</span>
+        </div>
+        <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label="AI budget used">
+          <div className={`h-full rounded-full ${pct >= 90 ? 'bg-red-500' : pct >= 70 ? 'bg-amber-500' : 'bg-brand-600'}`} style={{ width: `${pct}%` }} />
+        </div>
+        {u.by_feature.length === 0 ? (
+          <p className="mt-4 text-sm text-muted">No AI calls this month.</p>
+        ) : (
+          <Table className="mt-4">
+            <thead>
+              <tr><th className={th}>Feature</th><th className={`${th} text-right`}>Calls</th><th className={`${th} text-right`}>Tokens in / out</th><th className={`${th} text-right`}>Web searches</th><th className={`${th} text-right`}>Cost</th></tr>
+            </thead>
+            <tbody>
+              {u.by_feature.map((f) => (
+                <tr key={f.feature}>
+                  <td className={td}>{FEATURE_LABEL[f.feature] ?? f.feature}</td>
+                  <td className={`${td} tabular text-right`}>{num(f.calls)}</td>
+                  <td className={`${td} tabular text-right`}>{num(f.input_tokens)} / {num(f.output_tokens)}</td>
+                  <td className={`${td} tabular text-right`}>{num(f.web_searches)}</td>
+                  <td className={`${td} tabular text-right`}>${f.cost_usd.toFixed(4)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        )}
+      </div>
+    </Card>
+  )
+}
+
+function AuditCard() {
+  const log = useQuery({ queryKey: ['audit'], queryFn: () => api<AuditEntry[]>('/api/admin/audit?limit=100') })
+  return (
+    <Card className="mt-8">
+      <CardHeader title="Audit trail" subtitle="Last 100 changes to products, companies, settings, users and reports" />
+      {!log.data?.length ? (
+        <p className="px-5 py-4 text-sm text-muted">{log.isLoading ? 'Loading…' : 'No changes recorded yet.'}</p>
+      ) : (
+        <Table>
+          <thead>
+            <tr><th className={th}>When</th><th className={th}>User</th><th className={th}>Action</th><th className={th}>Detail</th></tr>
+          </thead>
+          <tbody>
+            {log.data.map((e, i) => (
+              <tr key={i}>
+                <td className={`${td} whitespace-nowrap text-muted`}>{dateTime(e.at)}</td>
+                <td className={`${td} text-xs`}>{e.user}</td>
+                <td className={`${td} whitespace-nowrap`}><Badge>{e.action}</Badge> <span className="text-xs text-muted">{e.entity}{e.entity_id ? ` #${e.entity_id}` : ''}</span></td>
+                <td className={`${td} max-w-md text-xs text-muted`}><span className="line-clamp-2" title={e.detail}>{e.detail}</span></td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      )}
+    </Card>
+  )
+}
+
 export default function Admin() {
   const { user: me } = useAuth()
   const qc = useQueryClient()
@@ -67,7 +247,9 @@ export default function Admin() {
 
   return (
     <>
-      <PageHeader title="Administration" subtitle="Data sources, refresh history and user access." />
+      <PageHeader title="Administration" subtitle="Company profile, AI budget, data sources, refresh history, users and the audit trail." />
+      <SettingsCard />
+      <UsageCard />
       <h2 className="mb-3 text-sm font-semibold text-slate-900">Data sources</h2>
       <div className="mb-8 grid gap-4 md:grid-cols-2">
         {sources.isLoading && [0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-32" />)}
@@ -144,6 +326,7 @@ export default function Admin() {
           </tbody>
         </Table>
       </Card>
+      <AuditCard />
       <Modal open={adding} onOpenChange={setAdding} title="Add user">
         {adding && <NewUser onDone={() => setAdding(false)} />}
       </Modal>

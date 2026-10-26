@@ -448,3 +448,155 @@ def test_refresh_splits_years_when_response_hits_record_cap(db, monkeypatch):
     db.expire_all()
     assert db.get(RefreshRun, run_id).status == "succeeded"
     assert periods[:3] == ["2022,2023", "2022", "2023"]
+
+
+# ---------- buyer profiles, guardrails, cost control, settings, audit ----------
+
+
+def test_contact_filter_keeps_only_generic_company_mailboxes():
+    site = "https://www.acme-foods.co.uk"
+    assert research.clean_contact({"email": "sales@acme-foods.co.uk", "phone": "+44 20 7946 0000"}, site) == {
+        "email": "sales@acme-foods.co.uk",
+        "phone": "+44 20 7946 0000",
+    }
+    assert research.clean_contact({"email": "john.smith@acme-foods.co.uk"}, site) == {}  # personal mailbox
+    assert research.clean_contact({"email": "info@gmail.com"}, site) == {}  # not the company's domain
+    assert research.clean_contact({"contact_url": "javascript:alert(1)"}, site) == {}
+    assert research.clean_contact("not a dict", site) == {}
+
+
+def test_signals_without_retrieved_source_are_dropped():
+    results = {"https://acme.co.uk/about": {"url": "https://acme.co.uk/about", "title": "Acme", "quotes": []}}
+    kept, _ = research.validate_candidates(
+        [
+            {
+                "name": "Acme",
+                "roles": ["importer"],
+                "source_url": "https://acme.co.uk/about",
+                "private_label": "YES",
+                "markets_served": ["gbr", "Ireland", "IRL"],
+                "buying_signals": [
+                    {"text": "Launching own-brand Levantine range", "url": "https://acme.co.uk/about"},
+                    {"text": "Invented", "url": "https://elsewhere.example/x"},
+                ],
+            }
+        ],
+        results,
+        ["importer"],
+    )
+    assert [s["text"] for s in kept[0]["buying_signals"]] == ["Launching own-brand Levantine range"]
+    assert kept[0]["private_label"] == "yes" and kept[0]["markets_served"] == ["GBR", "IRL"]
+
+
+def test_cost_and_budget_cap(db, analyst, ai_on):
+    from app.ai import usage as ai_usage
+    from app.services import settings as app_settings
+
+    c = ai_usage.cost("claude-haiku-5-5", {"input_tokens": 1_000_000, "output_tokens": 1_000_000, "web_searches": 5})
+    assert c == pytest.approx(0.10 + 0.50 + 0.05)
+    app_settings.put(db, "ai_monthly_budget_usd", 0.5)
+    ai_usage.record(db, None, "analyst", {"model": "claude-haiku-5-5", "input_tokens": 6_000_000})
+    db.commit()
+    r = analyst.post("/api/ai/ask", json={"hs_code": "190531", "question": "Which market?"})
+    assert r.status_code == 429 and "budget" in r.json()["detail"]
+
+
+def test_settings_validation_and_export_market_flag(db, admin, analyst):
+    _load(db)
+    body = {
+        "company_profile": {"name": "ALDurra", "brand": "Durra", "country_iso3": "syr"},
+        "export_markets": ["gbr", "XXX"],
+        "ai_monthly_budget_usd": 25,
+    }
+    assert admin.put("/api/admin/settings", json=body).status_code == 422  # unknown ISO3
+    assert analyst.put("/api/admin/settings", json={**body, "export_markets": ["GBR"]}).status_code == 403
+    ok = admin.put("/api/admin/settings", json={**body, "export_markets": ["gbr"]}).json()
+    assert ok["export_markets"] == ["GBR"] and ok["company_profile"]["country_iso3"] == "SYR"
+    markets = analyst.post("/api/markets/190531/ranking", json={}).json()["markets"]
+    assert {m["iso3"]: m["existing_market"] for m in markets} == {"GBR": True, "DEU": False}
+    log = admin.get("/api/admin/audit").json()
+    assert any(e["entity"] == "settings" for e in log)
+
+
+def _company(db, **kw):
+    from app.models import Company
+
+    c = Company(name="Acme Foods", country_iso3="GBR", roles=["importer"], hs_codes=["190531"], **kw)
+    db.add(c)
+    db.commit()
+    return c.id
+
+
+def test_review_rescores_and_is_audited(db, analyst, admin):
+    _load(db)
+    cid = _company(db, relationship_type="buyer", private_label="possible")
+    before = analyst.patch(f"/api/companies/{cid}", json={"pipeline_stage": "contacted"}).json()
+    after = analyst.patch(f"/api/companies/{cid}", json={"review_status": "verified"}).json()
+    assert after["pipeline_stage"] == "contacted"
+    assert after["prospect_score"] > (before["prospect_score"] or 0)
+    competitor = analyst.patch(f"/api/companies/{cid}", json={"relationship_type": "competitor"}).json()
+    assert competitor["prospect_score"] is None  # competitors are never scored as prospects
+    assert analyst.get("/api/companies?relationship=competitor").json()[0]["id"] == cid
+    assert sum(e["entity"] == "company" for e in admin.get("/api/admin/audit").json()) == 3
+    assert analyst.patch(f"/api/companies/{cid}", json={"pipeline_stage": "maybe"}).status_code == 422
+
+
+def test_company_brief_is_validated_and_logged(db, analyst, admin, ai_on, monkeypatch):
+    from app.ai import claude as claude_mod
+
+    _load(db)
+    cid = _company(db, relationship_type="buyer")
+
+    def fake(name, evidence):
+        st = claude_mod.Statement
+        return claude_mod.CompanyBrief(
+            sections=[
+                claude_mod.BriefSection(
+                    title="Purchasing pattern and volumes",
+                    statements=[
+                        st(text="They buy 40 containers a month.", label="estimate", evidence_ids=[]),
+                        st(text="Order volumes are unknown.", label="unavailable", evidence_ids=[evidence[-1].id]),
+                    ],
+                )
+            ],
+            outreach_email=claude_mod.Email(subject="Private label", body="We can supply 500 tonnes a month."),
+        ), {"model": "claude-haiku-5-5", "input_tokens": 1000, "output_tokens": 500}
+
+    monkeypatch.setattr(claude_mod, "write_company_brief", fake)
+    b = analyst.post(f"/api/companies/{cid}/brief").json()
+    labels = [s["label"] for s in b["sections"][0]["statements"]]
+    assert labels == ["unverified", "unavailable"]  # invented volume is withheld
+    assert b["outreach_email"]["warnings"]  # numbers not in evidence are flagged
+    assert analyst.get(f"/api/companies/{cid}").status_code in (404, 405)  # no stray route
+    assert analyst.get(f"/api/companies/{cid}/brief").json()["company"] == "Acme Foods"
+    report = admin.get("/api/admin/ai-usage").json()
+    assert report["by_feature"][0]["feature"] == "company_brief" and report["month_spend_usd"] > 0
+
+
+def test_news_keeps_only_retrieved_sources(db, analyst, ai_on, monkeypatch):
+    from app.ai import claude as claude_mod
+
+    def fake_news(**kw):
+        return (
+            [
+                {"title": "EU labelling rule", "url": "https://gov.example/rule", "date": "2026-05"},
+                {"title": "Made up", "url": "https://nowhere.example"},
+            ],
+            {"https://gov.example/rule": {"url": "https://gov.example/rule", "title": "Gov", "quotes": []}},
+            {"model": "claude-haiku-5-5", "web_searches": 2},
+        )
+
+    monkeypatch.setattr(claude_mod, "research_news", fake_news)
+    r = analyst.post("/api/markets/190531/news", json={}).json()
+    assert [i["title"] for i in r["items"]] == ["EU labelling rule"] and r["rejected"] == 1
+    assert analyst.post("/api/markets/190531/news", json={}).json()["cached"] is True
+    assert analyst.get("/api/markets/190531/news").json()["items"][0]["url"] == "https://gov.example/rule"
+
+
+def test_company_and_list_exports(db, analyst):
+    cid = _company(db, relationship_type="buyer", contact={"email": "sales@acme.example"})
+    lid = analyst.post("/api/prospect-lists", json={"name": "UK Q1"}).json()["id"]
+    analyst.post(f"/api/prospect-lists/{lid}/companies/{cid}")
+    body = analyst.get(f"/api/prospect-lists/{lid}/export").content.decode("utf-8-sig")
+    assert "Acme Foods" in body and "sales@acme.example" in body
+    assert "Acme Foods" in analyst.get("/api/companies/export?relationship=buyer").content.decode("utf-8-sig")

@@ -7,12 +7,13 @@ from sqlalchemy import any_, select
 
 from app import reports as render
 from app.ai import claude
+from app.ai import usage as ai_usage
 from app.ai.grounding import build_context, validate_statements
 from app.analytics import DEFAULT_WEIGHTS
 from app.models import Company, HSCode, Product, Report
 from app.routers.companies import _country_names, company_out
 from app.security import DB, Analyst, CurrentUser
-from app.services import trade
+from app.services import audit, trade
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
@@ -47,8 +48,10 @@ def generate(body: GenerateIn, user: Analyst, db: DB):
     hs = product.hs_code
     if not trade.overview(db, hs).get("has_data"):
         raise HTTPException(409, "Load trade statistics for this product before generating a brief.")
+    ai_usage.check_budget(db)
     evidence = build_context(db, hs)
     brief, usage = claude.write_brief(product.name, hs, evidence)
+    usage["cost_usd"] = ai_usage.record(db, user.id, "market_brief", usage)
     sections = [
         {"title": s.title, "statements": validate_statements([x.model_dump() for x in s.statements], evidence)}
         for s in brief.sections
@@ -84,6 +87,8 @@ def generate(body: GenerateIn, user: Analyst, db: DB):
         title=title, hs_code=hs, product_id=product.id, content=content, model=usage["model"], created_by=user.id
     )
     db.add(r)
+    db.flush()
+    audit.record(db, user, "generate", "report", r.id, f"{title} (cost ${usage['cost_usd']:.4f})")
     db.commit()
     return {**_summary(r), "content": content}
 

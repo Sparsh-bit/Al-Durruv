@@ -1,4 +1,4 @@
-import type { Label } from './types'
+import type { Label, Relationship, Stage } from './types'
 
 export const LABEL_META: Record<Label, { text: string; tone: 'green' | 'amber' | 'blue' | 'slate' | 'red'; help: string }> = {
   verified: { text: 'Verified', tone: 'green', help: 'Directly stated by the cited data source.' },
@@ -7,3 +7,18 @@ export const LABEL_META: Record<Label, { text: string; tone: 'green' | 'amber' |
   unavailable: { text: 'Unavailable', tone: 'slate', help: 'The data needed is not available from connected sources.' },
   unverified: { text: 'Unverified', tone: 'red', help: 'Failed automatic checks (a number did not match its evidence). Excluded from exports.' },
 }
+
+export const STAGES: { key: Stage; label: string }[] = [
+  { key: 'identified', label: 'Identified' },
+  { key: 'researched', label: 'Researched' },
+  { key: 'contacted', label: 'Contacted' },
+  { key: 'negotiating', label: 'Negotiating' },
+  { key: 'won', label: 'Won' },
+  { key: 'lost', label: 'Lost' },
+]
+export const RELATIONSHIP_LABEL: Record<Relationship, string> = { buyer: 'Potential buyer', competitor: 'Competitor', supplier: 'Supplier' }
+export const PL_META = {
+  yes: { tone: 'green', text: 'Private label: evidence' },
+  possible: { tone: 'amber', text: 'Private label: possible' },
+  unknown: { tone: 'slate', text: 'Private label: unknown' },
+} as const

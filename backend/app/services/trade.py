@@ -13,6 +13,7 @@ from app.analytics import DEFAULT_WEIGHTS, MarketInput, cagr, score_markets, uni
 from app.config import get_settings
 from app.db import SessionLocal
 from app.models import Country, HSCode, MarketOpportunity, RefreshRun, TradeObservation
+from app.services import settings
 
 TOP_MARKETS_FOR_PARTNERS = 10  # each is one API call; keeps a refresh at ~13 calls
 MAX_QUOTA_WAITS = 6
@@ -275,7 +276,7 @@ def country_detail(db: Session, hs: str, m49: int) -> dict | None:
     latest = series[year]
     partners = _partners(db, hs, m49, year)
     total = sum(p.value_usd for p in partners) or None
-    home = get_settings().home_country_iso3.upper()
+    home = settings.home_country(db)
     home_share = None
     if home and partners and total:
         home_share = (

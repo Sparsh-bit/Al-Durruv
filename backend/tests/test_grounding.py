@@ -64,3 +64,68 @@ def test_inference_with_numbers_also_checked_and_unavailable_kept():
     )
     assert out[0]["label"] == "unavailable" and out[0]["issues"] == []
     assert out[1]["label"] == "unverified"
+
+
+def test_live_run_false_positives_are_fixed():
+    """Statements from the first live Claude run (26 Oct 2026) that were wrongly marked unverified."""
+    ev = [
+        Evidence("E28", "score", "UK scored 85.0/100", [85.0, 0.86, 0.37]),
+        Evidence("E44", "trade_stat", "SYR share 0.0%", [0.0]),
+        Evidence("E5", "trade_stat", "UK imports", [833_100_000.0]),
+    ]
+    out = validate_statements(
+        [
+            {"text": "United Kingdom scored 85.0/100 for HS 190531.", "label": "verified", "evidence_ids": ["E28"]},
+            {"text": "The USA price level score of 0.37 is the lowest.", "label": "verified", "evidence_ids": ["E28"]},
+            {"text": "Syria holds 0.0% of imports.", "label": "verified", "evidence_ids": ["E44"]},
+            {
+                "text": "The UK imported $833.1 million of HS code 190531 in 2025.",
+                "label": "verified",
+                "evidence_ids": ["E5"],
+            },
+        ],
+        ev,
+    )
+    assert [s["label"] for s in out] == ["verified"] * 4, [s["issues"] for s in out]
+    # still strict: a wrong score or share is caught
+    bad = validate_statements(
+        [{"text": "UK scored 91.0/100 with a 4% share.", "label": "verified", "evidence_ids": ["E28"]}], ev
+    )
+    assert bad[0]["label"] == "unverified"
+
+
+def test_live_brief_false_positives_are_fixed():
+    """Withheld statements from the first live market brief (26 Oct 2026)."""
+    ev = [
+        Evidence(
+            "E2",
+            "catalogue",
+            "Our products: Ma'amoul Dates (350 g, Carton box); Ma'amoul Dates (500 g, Tin)",
+            [350, 500],
+        ),
+        Evidence("E44", "trade_stat", "SYR holds 0.0% of USA imports.", [1.867523850441071e-05]),
+        Evidence("E60", "news", "Market development (2026-09-25): USDA forecast", []),
+    ]
+    out = validate_statements(
+        [
+            {
+                "text": "We offer Ma'amoul Dates in a 350 g carton and a 500 g tin.",
+                "label": "verified",
+                "evidence_ids": ["E2"],
+            },
+            {"text": "SYR holds 0.0% of USA imports.", "label": "verified", "evidence_ids": ["E44"]},
+            {
+                "text": "USDA (reported 2026-09-25) expects sweets prices to rise.",
+                "label": "verified",
+                "evidence_ids": ["E60"],
+            },
+        ],
+        ev,
+    )
+    assert [s["label"] for s in out] == ["verified"] * 3, [s["issues"] for s in out]
+    assert (
+        validate_statements([{"text": "SYR holds 2.5% of imports.", "label": "verified", "evidence_ids": ["E44"]}], ev)[
+            0
+        ]["label"]
+        == "unverified"
+    )

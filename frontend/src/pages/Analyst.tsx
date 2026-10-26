@@ -116,6 +116,11 @@ export default function Analyst() {
                   <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-brand-600 text-white"><Bot className="size-4" /></div>
                   <div className="min-w-0 flex-1 space-y-4">
                     <StatementList statements={m.answer.statements} evidence={m.answer.evidence} />
+                    {m.answer.usage.cost_usd !== undefined && (
+                      <p className="text-[11px] text-muted">
+                        {m.answer.usage.model} · {m.answer.usage.input_tokens + m.answer.usage.output_tokens} tokens · ${m.answer.usage.cost_usd.toFixed(4)}
+                      </p>
+                    )}
                     {m.answer.evidence.length > 0 && (
                       <details className="group rounded-lg border border-line bg-slate-50/60 px-3 py-2">
                         <summary className="cursor-pointer text-xs font-medium text-slate-600">Evidence used ({m.answer.evidence.length})</summary>

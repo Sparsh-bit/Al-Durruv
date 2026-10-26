@@ -71,3 +71,36 @@ def test_no_nan_leaks():
     rows = score_markets([_m(1, {2024: 1.0}), _m(2, {2024: 1.0})])
     for r in rows:
         assert not math.isnan(r.score)
+
+
+def test_prospect_score_is_transparent_and_renormalised():
+    from app.analytics import prospect_score
+
+    strong, comps = prospect_score(
+        market_score=80,
+        roles=["importer"],
+        private_label="yes",
+        signals=3,
+        name_on_source=True,
+        review_status="verified",
+    )
+    weak, _ = prospect_score(
+        market_score=80,
+        roles=["manufacturer"],
+        private_label="unknown",
+        signals=0,
+        name_on_source=False,
+        review_status="candidate",
+    )
+    assert 0 <= weak < strong <= 100
+    assert set(comps) == {"market", "role_fit", "private_label", "evidence", "verification"}
+    assert comps["verification"]["normalized"] == 1.0  # analyst verification beats the automatic check
+    no_market, comps2 = prospect_score(
+        market_score=None,
+        roles=["importer"],
+        private_label="yes",
+        signals=3,
+        name_on_source=True,
+        review_status="verified",
+    )
+    assert comps2["market"]["status"] == "unavailable" and no_market == pytest.approx(100.0)

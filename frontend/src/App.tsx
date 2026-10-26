@@ -11,6 +11,7 @@ const Companies = lazy(() => import('./pages/Companies'))
 const Analyst = lazy(() => import('./pages/Analyst'))
 const Brief = lazy(() => import('./pages/Brief'))
 const Reports = lazy(() => import('./pages/Reports'))
+const Pipeline = lazy(() => import('./pages/Pipeline'))
 const ReportView = lazy(() => import('./pages/ReportView'))
 const Logistics = lazy(() => import('./pages/Logistics'))
 const Admin = lazy(() => import('./pages/Admin'))
@@ -58,6 +59,7 @@ export default function App() {
             <Route path="analyst" element={<Analyst />} />
             <Route path="brief" element={<Brief />} />
           </Route>
+          <Route path="pipeline" element={<Pipeline />} />
           <Route path="reports" element={<Reports />} />
           <Route path="reports/:reportId" element={<ReportView />} />
           <Route path="logistics" element={<Logistics />} />

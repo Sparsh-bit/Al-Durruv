@@ -1,4 +1,4 @@
-# Client requirements vs. current build (26 Oct 2026)
+# Client requirements vs. current build (updated 26 Oct 2026, after live AI tests)
 
 Legend: **Done** = built and tested · **Partial** = works but missing parts the client asked for ·
 **Missing** = not built · **Blocked** = needs data or a subscription we do not have.
@@ -13,31 +13,31 @@ Legend: **Done** = built and tested · **Partial** = works but missing parts the
 | Country share with a defined denominator | **Done** | Shares are labelled "of reported imports/exports". |
 | Trends, growth, leading partners, growing markets | **Done** | CAGR on complete years only; partial years are flagged. |
 | Source, reporting period, retrieval date on every figure | **Done** | |
-| Focus on the client's 85+ existing export markets | **Missing** | Needs the client's country list. Plan: "our markets" setting, used to filter, highlight and compare in rankings. |
+| Focus on the client's 85+ existing export markets | **Done** (needs data) | Administration → "Countries we already export to"; ranking shows "Existing market" and filters new vs existing. Client list still to be entered. |
 
 ## B. Supplier & competitor intelligence
 
 | Requirement | Status | Notes |
 |---|---|---|
 | Supplier-country comparison and market concentration | **Done** | Per-market supplier shares and an openness (HHI) score. |
-| Companies in the same category with evidence | **Partial** | AI web research exists for "competitors" (manufacturers/exporters). |
-| Three distinct groups: supplier landscape / competitors / potential buyers | **Missing** | Companies currently carry roles only. Plan: an explicit relationship type, separate tabs, and research for each. |
-| Competitors' product ranges, markets, export evidence | **Missing** | Plan: structured research fields with sources. |
+| Companies in the same category with evidence | **Done** | AI research for competitors and for the supplier landscape, each with sources. |
+| Three distinct groups: supplier landscape / competitors / potential buyers | **Done** | Separate tabs, separate research, reclassification; only buyers are scored as prospects. |
+| Competitors' product ranges, markets, export evidence | **Done** | Product range, markets served, sourced signals per company. |
 
 ## C. Buyer discovery & lead generation
 
 | Requirement | Status | Notes |
 |---|---|---|
 | Find importers, distributors, wholesalers, retailers, brand owners | **Done** | AI research requires a source page for every company; analyst verifies or rejects. |
-| Profile fields: product fit, buying signals, private-label fit, contact info, opportunity score, confidence | **Missing** | Plan: extend the research schema; a transparent prospect score computed in Python; public business contacts only. |
+| Profile fields: product fit, buying signals, private-label fit, contact info, opportunity score, confidence | **Done** | Transparent 0-100 fit score with breakdown; generic business contacts on the company's own domain only. Live-tested. |
 | Purchase estimates only with sufficient evidence | **Blocked** | Needs shipment records (ImportGenius/Panjiva/Volza) or client sales history. Shown as "Unknown" until then. |
-| Explain why each prospect is relevant | **Partial** | One-line summary today. Plan: evidence-linked "why this prospect" statements. |
+| Explain why each prospect is relevant | **Done** | "Fit with our products" per company plus the AI company brief. |
 
 ## D. Customer business intelligence
 
 | Requirement | Status | Notes |
 |---|---|---|
-| Per-company brief (products, markets, suppliers, trend, PL fit, negotiation approach) | **Missing** | Plan: AI company brief with Verified / Estimated / Inferred / Unknown labels and citations. |
+| Per-company brief (products, markets, suppliers, trend, PL fit, negotiation approach) | **Done** | Live-tested ($0.004 per brief) including a draft first-contact email. |
 | Order frequency, monthly volume, spend | **Blocked** | Same as C: no legitimate source in the demo. |
 
 ## E. Logistics & shipping
@@ -45,7 +45,7 @@ Legend: **Done** = built and tested · **Partial** = works but missing parts the
 | Requirement | Status | Notes |
 |---|---|---|
 | Origin/destination, mode, transit time, cost, carrier, assumptions, date | **Partial** | Client-entered quotes with source and validity date; freight API marked "Not connected". |
-| Route comparison | **Missing** | Plan: compare quotes per destination (cost per kg/container, days). |
+| Route comparison | **Done** | Per destination with cheapest/fastest; carrier, Incoterm, assumptions recorded. |
 | Live freight pricing | **Blocked** | Needs a Freightos / Searates subscription. |
 
 ## F. Global market report
@@ -53,16 +53,16 @@ Legend: **Done** = built and tested · **Partial** = works but missing parts the
 | Requirement | Status | Notes |
 |---|---|---|
 | Top importers/exporters, values over time, shares, growth, sourcing countries | **Done** | |
-| Relevant public market developments and news | **Missing** | Plan: AI web research for recent market news per HS code, with sources and dates. |
-| Tariffs / market access | **Missing** | Plan: World Bank WITS tariff lookup (free) as a supplementary adapter. |
+| Relevant public market developments and news | **Done** | Sourced items only; cached 7 days. |
+| Tariffs / market access | **Missing** | Next candidate: World Bank WITS tariff adapter. News research already surfaces tariff changes with sources. |
 
 ## G. AI business analyst
 
 | Requirement | Status | Notes |
 |---|---|---|
-| Natural-language questions answered from platform data with sources, periods, confidence | **Done (not live-tested)** | Grounding validator withholds unsupported numbers. Needs an API key to test live. |
-| Knows the client's own products | **Missing** | Plan: add the catalogue (products, pack sizes, collections) to the evidence pack. |
-| Prospect research and negotiation briefs on request | **Missing** | Plan: company-level context and a negotiation-brief action. |
+| Natural-language questions answered from platform data with sources, periods, confidence | **Done** | Live-tested ($0.002 per answer). |
+| Knows the client's own products | **Done** | Company profile (editable) and catalogue products are part of every evidence pack. |
+| Prospect research and negotiation briefs on request | **Done** | |
 
 ## H. Recommended extras
 
@@ -70,11 +70,11 @@ Legend: **Done** = built and tested · **Partial** = works but missing parts the
 |---|---|
 | Opportunity dashboard (markets) | **Done** |
 | Saved prospects / lists | **Done** (basic) |
-| CRM pipeline stages + notes | **Missing** |
-| Outreach email drafts | **Missing** |
-| Exports CSV/Excel/PDF | **Partial** (reports and catalogue; prospect-list export missing) |
+| CRM pipeline stages + notes | **Done** |
+| Outreach email drafts | **Done** (draft only, never sent) |
+| Exports CSV/Excel/PDF | **Done** (reports, catalogue, companies, prospect lists) |
 | Data-source admin, refresh history | **Done** |
-| User roles | **Done**; audit trail **Missing** |
+| User roles and audit trail | **Done** |
 
 ## AI cost control and guardrails (requested 26 Oct)
 
@@ -82,12 +82,12 @@ Legend: **Done** = built and tested · **Partial** = works but missing parts the
 |---|---|
 | Cheapest capable model (`claude-haiku-5-5`) for all tasks | **Done**: one setting; per-task override planned only where Haiku proves insufficient |
 | Web-search cap per research run, 7-day result cache | **Done** |
-| Token/cost logging per call, monthly budget cap, admin cost view | **Missing**: planned |
-| Prompt caching of the fixed instructions | **Missing**: planned |
+| Token/cost logging per call, monthly budget cap, admin cost view | **Done** |
+| Prompt caching of instructions + evidence | **Done** (verified live) |
 | Grounding: cite evidence, numbers must match evidence, failed statements withheld | **Done** |
 | Companies kept only if tied to a retrieved source; page re-checked | **Done** |
-| Web content treated as data, never instructions (prompt-injection guard) | **Partial**: add explicit rule and output checks |
-| No personal data beyond public business contacts | **Missing**: rule plus field restrictions planned |
+| Web content treated as data, never instructions (prompt-injection guard) | **Done**: rule in every prompt + URL/number validation |
+| No personal data beyond public business contacts | **Done**: prompt rule + contact filter (generic mailboxes on own domain) |
 
 "Training" note: the AI is **not fine-tuned**. It is grounded on the platform's data at question time
 (retrieval), which keeps answers current and auditable and costs nothing extra. Fine-tuning would not

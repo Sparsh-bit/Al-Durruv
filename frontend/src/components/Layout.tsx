@@ -1,7 +1,7 @@
 import * as Menu from '@radix-ui/react-dropdown-menu'
 import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
-import { BarChart3, Boxes, Building2, ChevronDown, FileText, LogOut, Menu as MenuIcon, Settings2, Ship, Sparkles, X } from 'lucide-react'
+import { BarChart3, Boxes, Building2, ChevronDown, FileText, KanbanSquare, LogOut, Menu as MenuIcon, Settings2, Ship, Sparkles, X } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { NavLink, Outlet, useMatch } from 'react-router'
 import { api } from '../lib/api'
@@ -92,6 +92,7 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       <div>
         <div className="mb-2 px-3 text-[11px] font-semibold tracking-wider text-slate-500 uppercase">Operations</div>
         <div className="space-y-1">
+          <Item to="/pipeline" icon={<KanbanSquare />}>Sales pipeline</Item>
           <Item to="/reports" icon={<FileText />}>Reports</Item>
           <Item to="/logistics" icon={<Ship />}>Logistics</Item>
           {can('admin') && <Item to="/admin" icon={<Settings2 />}>Administration</Item>}

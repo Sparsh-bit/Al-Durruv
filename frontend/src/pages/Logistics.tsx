@@ -8,7 +8,21 @@ import { useAuth } from '../lib/auth'
 import { date, usd } from '../lib/format'
 import type { Provider, Quote } from '../lib/types'
 
-const EMPTY = { origin: '', destination: '', destination_iso3: '', mode: 'sea', container: "40' HC", cost_usd: '', transit_days: '', source_note: '', valid_until: '' }
+const EMPTY = {
+  origin: '',
+  destination: '',
+  destination_iso3: '',
+  mode: 'sea',
+  container: "40' HC",
+  carrier: '',
+  incoterm: 'FOB',
+  cost_usd: '',
+  transit_days: '',
+  source_note: '',
+  assumptions: '',
+  valid_until: '',
+}
+const INCOTERMS = ['', 'EXW', 'FCA', 'FOB', 'CFR', 'CIF', 'CPT', 'CIP', 'DAP', 'DPU', 'DDP']
 
 function QuoteForm({ onDone }: { onDone: () => void }) {
   const qc = useQueryClient()
@@ -45,7 +59,13 @@ function QuoteForm({ onDone }: { onDone: () => void }) {
             <option value="sea">Sea</option><option value="air">Air</option><option value="road">Road</option><option value="rail">Rail</option>
           </Select>
         </Field>
-        <Field label="Equipment"><Input value={f.container} onChange={set('container')} /></Field>
+        <Field label="Equipment"><Input maxLength={40} value={f.container} onChange={set('container')} /></Field>
+        <Field label="Carrier / forwarder"><Input maxLength={120} value={f.carrier} onChange={set('carrier')} placeholder="e.g. MSC via forwarder X" /></Field>
+        <Field label="Incoterm">
+          <Select value={f.incoterm} onChange={set('incoterm')}>
+            {INCOTERMS.map((t) => <option key={t} value={t}>{t || 'Not stated'}</option>)}
+          </Select>
+        </Field>
         <Field label="Cost (USD)"><Input type="number" min={0} step="0.01" value={f.cost_usd} onChange={set('cost_usd')} /></Field>
         <Field label="Transit time (days)"><Input type="number" min={0} max={365} value={f.transit_days} onChange={set('transit_days')} /></Field>
         <Field label="Valid until"><Input type="date" value={f.valid_until} onChange={set('valid_until')} /></Field>
@@ -53,11 +73,50 @@ function QuoteForm({ onDone }: { onDone: () => void }) {
       <Field label="Source" hint="Who quoted it and when, e.g. 'Forwarder X quote ref 1234, 20 Oct 2026'">
         <Input required minLength={3} value={f.source_note} onChange={set('source_note')} />
       </Field>
+      <Field label="Assumptions" hint="Weight, pallets, service level, surcharges included or excluded…">
+        <Input maxLength={2000} value={f.assumptions} onChange={set('assumptions')} />
+      </Field>
       <div className="flex justify-end gap-2">
         <Button variant="secondary" onClick={onDone}>Cancel</Button>
         <Button type="submit" loading={save.isPending}>Save quote</Button>
       </div>
     </form>
+  )
+}
+
+function Comparison({ quotes }: { quotes: Quote[] }) {
+  const groups = [...new Map(quotes.map((q) => [q.destination_iso3, quotes.filter((x) => x.destination_iso3 === q.destination_iso3)])).entries()].filter(
+    ([, qs]) => qs.length > 1,
+  )
+  if (!groups.length) return null
+  return (
+    <Card className="mb-6">
+      <CardHeader title="Route comparison" subtitle="Destinations with more than one quote. Compare like for like: check equipment, Incoterm and assumptions." />
+      <div className="divide-y divide-line">
+        {groups.map(([iso, qs]) => {
+          const priced = qs.filter((q) => q.cost_usd !== null)
+          const timed = qs.filter((q) => q.transit_days !== null)
+          const cheapest = priced.length ? Math.min(...priced.map((q) => q.cost_usd!)) : null
+          const fastest = timed.length ? Math.min(...timed.map((q) => q.transit_days!)) : null
+          return (
+            <div key={iso} className="px-5 py-3">
+              <div className="mb-2 text-sm font-semibold text-slate-900">To {iso}</div>
+              <ul className="space-y-1.5 text-sm">
+                {qs.map((q) => (
+                  <li key={q.id} className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <span className="min-w-56">{q.origin} → {q.destination} <span className="text-muted capitalize">· {q.mode}{q.container ? ` · ${q.container}` : ''}{q.incoterm ? ` · ${q.incoterm}` : ''}</span></span>
+                    <span className="tabular">{q.cost_usd === null ? '—' : usd(q.cost_usd, 2)}</span>
+                    <span className="tabular text-muted">{q.transit_days === null ? '—' : `${q.transit_days} d`}</span>
+                    {q.cost_usd !== null && q.cost_usd === cheapest && <Badge tone="green">Cheapest</Badge>}
+                    {q.transit_days !== null && q.transit_days === fastest && <Badge tone="blue">Fastest</Badge>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )
+        })}
+      </div>
+    </Card>
   )
 }
 
@@ -91,6 +150,7 @@ export default function Logistics() {
           </Card>
         ))}
       </div>
+      <Comparison quotes={data.data?.quotes ?? []} />
       <Card>
         <CardHeader title="Client-provided quotes" subtitle="Shown in market detail and cited by the AI analyst as labelled estimates" />
         {data.isLoading ? (
@@ -114,7 +174,11 @@ export default function Logistics() {
                   <td className={`${td} capitalize`}>{q.mode} {q.container && <span className="text-muted">· {q.container}</span>}</td>
                   <td className={`${td} tabular text-right`}>{q.cost_usd === null ? '—' : usd(q.cost_usd, 2)}</td>
                   <td className={`${td} tabular text-right`}>{q.transit_days === null ? '—' : `${q.transit_days} d`}</td>
-                  <td className={td}><Badge tone="amber">Client-provided</Badge><div className="mt-1 max-w-xs text-xs text-muted">{q.source_note}</div></td>
+                  <td className={td}>
+                    <Badge tone="amber">Client-provided</Badge>
+                    <div className="mt-1 max-w-xs text-xs text-muted">{q.source_note}{q.carrier ? ` · ${q.carrier}` : ''}{q.incoterm ? ` · ${q.incoterm}` : ''}</div>
+                    {q.assumptions && <div className="mt-0.5 max-w-xs text-xs text-muted italic">{q.assumptions}</div>}
+                  </td>
                   <td className={`${td} text-muted`}>{date(q.valid_until)}</td>
                   <td className={`${td} text-right`}>
                     {can('analyst') && <Button size="sm" variant="ghost" aria-label="Delete quote" loading={remove.isPending && remove.variables === q.id} onClick={() => remove.mutate(q.id)}><Trash2 className="size-4" /></Button>}

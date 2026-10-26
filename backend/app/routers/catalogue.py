@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.models import HSCode, Product, TradeObservation
 from app.security import DB, Analyst, CurrentUser
+from app.services import audit
 
 router = APIRouter(prefix="/api", tags=["catalogue"])
 MAX_UPLOAD = 5 * 1024 * 1024
@@ -149,19 +150,21 @@ def _check_hs(db, code: str) -> None:
 
 
 @router.post("/products", status_code=201)
-def create_product(body: ProductIn, _: Analyst, db: DB):
+def create_product(body: ProductIn, user: Analyst, db: DB):
     _check_hs(db, body.hs_code)
     if db.scalar(select(Product).where(Product.sku == body.sku)):
         raise HTTPException(409, f"SKU {body.sku} already exists.")
     p = Product(**body.model_dump())
     db.add(p)
+    db.flush()
+    audit.record(db, user, "create", "product", p.id, f"{p.sku} {p.name}")
     db.commit()
     db.refresh(p)
     return _out(p)
 
 
 @router.put("/products/{product_id}")
-def update_product(product_id: int, body: ProductIn, _: Analyst, db: DB):
+def update_product(product_id: int, body: ProductIn, user: Analyst, db: DB):
     p = db.get(Product, product_id)
     if not p:
         raise HTTPException(404, "Product not found.")
@@ -169,24 +172,27 @@ def update_product(product_id: int, body: ProductIn, _: Analyst, db: DB):
     clash = db.scalar(select(Product).where(Product.sku == body.sku, Product.id != product_id))
     if clash:
         raise HTTPException(409, f"SKU {body.sku} already exists.")
+    changed = [k for k, v in body.model_dump().items() if getattr(p, k) != v]
     for k, v in body.model_dump().items():
         setattr(p, k, v)
+    audit.record(db, user, "update", "product", p.id, f"{p.sku}: {', '.join(changed) or 'no changes'}")
     db.commit()
     db.refresh(p)
     return _out(p)
 
 
 @router.delete("/products/{product_id}", status_code=204)
-def delete_product(product_id: int, _: Analyst, db: DB):
+def delete_product(product_id: int, user: Analyst, db: DB):
     p = db.get(Product, product_id)
     if not p:
         raise HTTPException(404, "Product not found.")
+    audit.record(db, user, "delete", "product", p.id, f"{p.sku} {p.name}")
     db.delete(p)
     db.commit()
 
 
 @router.post("/products/import")
-async def import_products(file: UploadFile, _: Analyst, db: DB):
+async def import_products(file: UploadFile, user: Analyst, db: DB):
     data = await file.read(MAX_UPLOAD + 1)
     if len(data) > MAX_UPLOAD:
         raise HTTPException(413, "File is larger than 5 MB.")
@@ -203,7 +209,17 @@ async def import_products(file: UploadFile, _: Analyst, db: DB):
     except Exception:
         raise HTTPException(422, "The file could not be read. Check it is a valid CSV or Excel file.") from None
 
-    return apply_catalogue(db, df)
+    result = apply_catalogue(db, df)
+    audit.record(
+        db,
+        user,
+        "import",
+        "product",
+        "",
+        f"{file.filename}: {result['created']} created, {result['updated']} updated, {len(result['errors'])} errors",
+    )
+    db.commit()
+    return result
 
 
 def _net_quantity(raw: str) -> float | None:

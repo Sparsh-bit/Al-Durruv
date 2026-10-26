@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
-import { Building2, ChevronRight, Database, RefreshCw, RotateCcw, SlidersHorizontal, Sparkles } from 'lucide-react'
+import { Building2, ChevronRight, Database, Newspaper, RefreshCw, RotateCcw, SlidersHorizontal, Sparkles } from 'lucide-react'
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import { toast } from 'sonner'
@@ -15,6 +15,7 @@ import {
   EmptyState,
   InfoTip,
   Notice,
+  Select,
   Skeleton,
   SourceLink,
   Stat,
@@ -27,7 +28,7 @@ import { api, post } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { date, dateTime, pct, tonnes, usd } from '../lib/format'
 import { isActive, useOverview, useProduct, useRun } from '../lib/hooks'
-import type { CountryDetail, Overview, Product, Quote, Provider, RankedMarket, Run, Weights } from '../lib/types'
+import type { CountryDetail, NewsItem, Overview, Product, Provider, Quote, RankedMarket, Run, Weights } from '../lib/types'
 
 const DEFAULT_WEIGHTS: Weights = { market_size: 35, growth: 25, openness: 20, price_level: 10, data_quality: 10 }
 const SHORT: Record<keyof Weights, string> = {
@@ -227,6 +228,57 @@ function CountryDrawer({ hs, m49, product, onClose }: { hs: string; m49: number 
   )
 }
 
+function NewsCard({ hs, productName }: { hs: string; productName: string }) {
+  const { can } = useAuth()
+  const qc = useQueryClient()
+  const health = useQuery({ queryKey: ['health'], queryFn: () => api<{ ai_enabled: boolean }>('/api/health'), staleTime: 300_000 })
+  const news = useQuery({ queryKey: ['news', hs], queryFn: () => api<{ items: NewsItem[]; retrieved_at: string | null }>(`/api/markets/${hs}/news`) })
+  const refresh = useMutation({
+    mutationFn: (force: boolean) => post<{ items: NewsItem[]; retrieved_at: string; rejected?: number }>(`/api/markets/${hs}/news`, { product_name: productName, force }),
+    onSuccess: (r) => {
+      qc.setQueryData(['news', hs], r)
+      toast.success(r.items.length ? `Found ${r.items.length} sourced developments` : 'No sourced developments found')
+    },
+  })
+  const d = news.data
+  return (
+    <Card className="mt-6">
+      <CardHeader
+        title={<span className="flex items-center gap-2"><Newspaper className="size-4 text-brand-700" /> Market developments</span>}
+        subtitle={d?.retrieved_at ? `AI web research · sources checked · retrieved ${dateTime(d.retrieved_at)}` : 'Recent public news on demand, prices, regulation and trade policy for this product.'}
+        action={
+          can('analyst') && health.data?.ai_enabled && (
+            <Button size="sm" variant="secondary" icon={<Sparkles className="size-3.5" />} loading={refresh.isPending} onClick={() => refresh.mutate(Boolean(d?.retrieved_at))}>
+              {d?.retrieved_at ? 'Refresh' : 'Research news'}
+            </Button>
+          )
+        }
+      />
+      {health.data && !health.data.ai_enabled && !d?.items.length ? (
+        <p className="px-5 py-4 text-sm text-muted">Available once the Claude API key is configured.</p>
+      ) : refresh.isPending ? (
+        <div className="space-y-2 p-5">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-12" />)}</div>
+      ) : !d?.items.length ? (
+        <p className="px-5 py-4 text-sm text-muted">{d?.retrieved_at ? 'No developments with verifiable sources were found.' : 'Not researched yet.'}</p>
+      ) : (
+        <ul className="divide-y divide-line">
+          {d.items.map((n) => (
+            <li key={n.url + n.title} className="px-5 py-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-medium text-slate-900">{n.title}</span>
+                <Badge className="capitalize">{n.topic.replace('_', ' ')}</Badge>
+                {n.date && <span className="text-xs text-muted">{n.date}</span>}
+              </div>
+              {n.summary && <p className="mt-1 text-[13px] text-slate-600">{n.summary}</p>}
+              <div className="mt-1"><SourceLink source={{ url: n.url }} compact /></div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  )
+}
+
 function Dashboard({ ov, product, onRefresh, refreshing }: { ov: Extract<Overview, { has_data: true }>; product: Product | undefined; onRefresh: () => void; refreshing: boolean }) {
   const { can } = useAuth()
   const [weights, setWeights] = useState(DEFAULT_WEIGHTS)
@@ -237,7 +289,9 @@ function Dashboard({ ov, product, onRefresh, refreshing }: { ov: Extract<Overvie
     queryFn: () => post<{ markets: RankedMarket[] }>(`/api/markets/${ov.hs_code}/ranking`, weights),
     placeholderData: (prev) => prev,
   })
-  const markets = ranking.data?.markets ?? []
+  const [scope, setScope] = useState<'all' | 'new' | 'existing'>('all')
+  const allMarkets = ranking.data?.markets ?? []
+  const markets = allMarkets.filter((m) => scope === 'all' || (scope === 'existing') === Boolean(m.existing_market))
   const top = ov.top_importers[0]
   const topX = ov.top_exporters[0]
   const partial = ov.trend.filter((t) => !t.complete)
@@ -283,6 +337,13 @@ function Dashboard({ ov, product, onRefresh, refreshing }: { ov: Extract<Overvie
           subtitle="Explainable score computed from official statistics. Adjust weights to match your strategy."
           action={
             <div className="flex gap-2">
+              {allMarkets.some((m) => m.existing_market) && (
+                <Select className="h-8! w-auto! text-xs" value={scope} onChange={(e) => setScope(e.target.value as typeof scope)} aria-label="Market scope">
+                  <option value="all">All markets</option>
+                  <option value="new">New markets only</option>
+                  <option value="existing">Our existing markets</option>
+                </Select>
+              )}
               {showWeights && <Button size="sm" variant="ghost" icon={<RotateCcw className="size-3.5" />} onClick={() => setWeights(DEFAULT_WEIGHTS)}>Reset</Button>}
               <Button size="sm" variant={showWeights ? 'primary' : 'secondary'} icon={<SlidersHorizontal className="size-3.5" />} onClick={() => setShowWeights((v) => !v)}>Weights</Button>
             </div>
@@ -313,7 +374,10 @@ function Dashboard({ ov, product, onRefresh, refreshing }: { ov: Extract<Overvie
                 <tr key={m.m49} className="cursor-pointer hover:bg-slate-50/70" onClick={() => setSelected(m.m49)}>
                   <td className={`${td} tabular font-semibold text-slate-500`}>{m.rank}</td>
                   <td className={td}>
-                    <span className="flex items-center gap-2 font-medium text-slate-900"><CountryChip iso3={m.iso3} /> {m.name}</span>
+                    <span className="flex items-center gap-2 font-medium text-slate-900">
+                      <CountryChip iso3={m.iso3} /> {m.name}
+                      {m.existing_market && <Badge tone="teal">Existing market</Badge>}
+                    </span>
                   </td>
                   <td className={td}><ScoreBar score={m.score} /></td>
                   <td className={td}><ComponentCells m={m} /></td>
@@ -346,6 +410,8 @@ function Dashboard({ ov, product, onRefresh, refreshing }: { ov: Extract<Overvie
           </div>
         </Card>
       </div>
+
+      <NewsCard hs={ov.hs_code} productName={product?.name ?? ''} />
 
       <div className="mt-6 flex flex-wrap items-center justify-between gap-3 text-xs text-muted">
         <span>

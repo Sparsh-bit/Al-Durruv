@@ -45,12 +45,21 @@ The free preview API has a call-volume quota. A full refresh needs ~13 calls per
 runs out, the loader pauses until the reset time Comtrade reports and then continues on its own.
 Loading all 37 codes therefore takes a few hours on the free tier; a free Comtrade API key raises the limits.
 
-## Not yet verified live — needs the Claude API key
+## AI: live-tested 26 Oct 2026 on `claude-haiku-5-5`
 
-AI paths are implemented and tested with a mocked model, but **no real Claude call has been made**
-because no `ANTHROPIC_API_KEY` is configured. After adding the key, run one research, one question and
-one brief to confirm: (a) the web search tool works with `claude-haiku-5-5`, (b) structured outputs
-parse, (c) costs per run. If Haiku's search quality is not good enough, set `CLAUDE_MODEL=claude-sonnet-5-5`.
+| Feature | Result | Cost |
+|---|---|---|
+| AI analyst question | Grounded, labelled answer from real data; 5k-token evidence pack prompt-cached | $0.0016 |
+| Buyer research (UK, Ma'amoul) | 8 real companies with sources; found Oasis Market already stocks "Durra Date Maamoul 500g" | $0.036 (3 searches) |
+| Company brief + outreach email | 7 sections, purchasing volumes correctly "unknown", flagged halal scope | $0.0036 |
+| Market & prospect brief | 42 statements, validated; PDF/Excel export | $0.0054 |
+| Market news | Sourced items; prompt since tightened to top markets and reputable sources | $0.034 (3 searches) |
+
+Total spent on all live tests: **$0.08**. Web searches ($0.01 each) are the main cost driver; text generation
+on Haiku is a fraction of a cent per call. The app enforces a monthly budget cap (set to $8 in Administration).
+
+Validator false positives seen in these live runs ("/100" denominators, HS codes, dates, rounded "0.0%",
+pack sizes) were fixed and are covered by regression tests.
 
 ## Estimated, simulated or unavailable
 
@@ -76,4 +85,5 @@ No mock data is presented as real anywhere in the application.
 5. Security hardening: password reset, login rate limiting, audit log, HTTPS-only cookies or token
    refresh, regular dependency audits.
 6. Remove the local QA account (`qa@example.com`) created for browser testing.
+8. Enter the client's 85+ export markets in Administration (enables the existing/new market split).
 7. Client branding (name "TradeScope" is a placeholder), dark mode, and translations if needed.

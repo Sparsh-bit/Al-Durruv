@@ -132,6 +132,22 @@ class Company(Base):
     hs_codes: Mapped[list[str]] = mapped_column(ARRAY(String(6)), default=list)
     review_status: Mapped[str] = mapped_column(String(20), default=ReviewStatus.candidate)
     reviewed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    # buyer | competitor | supplier: kept distinct, a competitor is not a prospect
+    relationship_type: Mapped[str] = mapped_column(String(20), default="buyer", server_default="buyer", index=True)
+    product_range: Mapped[str] = mapped_column(Text, default="", server_default="")
+    product_fit: Mapped[str] = mapped_column(Text, default="", server_default="")
+    private_label: Mapped[str] = mapped_column(String(12), default="unknown", server_default="unknown")
+    private_label_evidence: Mapped[str] = mapped_column(Text, default="", server_default="")
+    buying_signals: Mapped[list] = mapped_column(JSONB, default=list, server_default="[]")
+    markets_served: Mapped[list] = mapped_column(JSONB, default=list, server_default="[]")
+    contact: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")  # public business contacts only
+    name_on_source: Mapped[bool | None] = mapped_column(nullable=True)
+    prospect_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    score_components: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
+    pipeline_stage: Mapped[str] = mapped_column(String(20), default="identified", server_default="identified")
+    notes: Mapped[str] = mapped_column(Text, default="", server_default="")
+    brief: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    brief_generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = _now()
     evidence: Mapped[list["CompanyEvidence"]] = relationship(
         back_populates="company", cascade="all, delete-orphan", lazy="selectin"
@@ -176,6 +192,9 @@ class LogisticsQuote(Base):
     container: Mapped[str] = mapped_column(String(40), default="")
     cost_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
     transit_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    carrier: Mapped[str] = mapped_column(String(120), default="", server_default="")
+    incoterm: Mapped[str] = mapped_column(String(10), default="", server_default="")
+    assumptions: Mapped[str] = mapped_column(Text, default="", server_default="")
     provenance: Mapped[str] = mapped_column(String(30), default="client_provided")
     source_note: Mapped[str] = mapped_column(Text, default="")
     valid_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -245,3 +264,51 @@ class RefreshRun(Base):
     started_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     started_at: Mapped[datetime] = _now()
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class MarketNews(Base):
+    """AI web research on recent market developments for one HS code (sources validated)."""
+
+    __tablename__ = "market_news"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    hs_code: Mapped[str] = mapped_column(ForeignKey("hs_codes.code"), index=True)
+    items: Mapped[list] = mapped_column(JSONB, default=list)
+    retrieved_at: Mapped[datetime] = _now()
+
+
+class AiUsage(Base):
+    """One row per Claude call: the basis for cost reporting and the monthly budget cap."""
+
+    __tablename__ = "ai_usage"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    created_at: Mapped[datetime] = _now()
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    feature: Mapped[str] = mapped_column(String(40))
+    model: Mapped[str] = mapped_column(String(60))
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cache_read_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cache_write_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    web_searches: Mapped[int] = mapped_column(Integer, default=0)
+    cost_usd: Mapped[float] = mapped_column(Float, default=0)
+
+
+class AppSetting(Base):
+    """Admin-editable settings (company profile, export markets, AI budget); override .env defaults."""
+
+    __tablename__ = "app_settings"
+    key: Mapped[str] = mapped_column(String(60), primary_key=True)
+    value: Mapped[dict | list | str | float | None] = mapped_column(JSONB, nullable=True)
+    updated_at: Mapped[datetime] = _now()
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_log"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    created_at: Mapped[datetime] = _now()
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    user_email: Mapped[str] = mapped_column(String(255), default="")
+    action: Mapped[str] = mapped_column(String(40))
+    entity: Mapped[str] = mapped_column(String(40))
+    entity_id: Mapped[str] = mapped_column(String(40), default="")
+    detail: Mapped[str] = mapped_column(Text, default="")

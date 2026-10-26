@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app.ai import claude
+from app.ai import usage as ai_usage
 from app.ai.grounding import build_context, validate_statements
 from app.models import HSCode
 from app.security import DB, CurrentUser
@@ -24,11 +25,14 @@ class AskIn(BaseModel):
 
 
 @router.post("/ask")
-def ask(body: AskIn, _: CurrentUser, db: DB):
+def ask(body: AskIn, user: CurrentUser, db: DB):
     if not db.get(HSCode, body.hs_code):
         raise HTTPException(404, f"Unknown HS code {body.hs_code}.")
+    ai_usage.check_budget(db)
     evidence = build_context(db, body.hs_code, body.focus_m49)
     answer, usage = claude.answer_question(body.question, evidence, [t.model_dump() for t in body.history])
+    usage["cost_usd"] = ai_usage.record(db, user.id, "analyst", usage)
+    db.commit()
     statements = validate_statements([s.model_dump() for s in answer.statements], evidence)
     cited = {i for s in statements for i in s["evidence_ids"]}
     return {

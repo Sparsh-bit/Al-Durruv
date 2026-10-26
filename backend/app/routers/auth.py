@@ -7,6 +7,7 @@ from sqlalchemy import select
 
 from app.models import Role, User
 from app.security import DB, Admin, CurrentUser, create_token, hash_password, verify_password
+from app.services import audit
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -54,12 +55,14 @@ def list_users(_: Admin, db: DB) -> list[UserOut]:
 
 
 @router.post("/users", status_code=201)
-def create_user(body: UserIn, _: Admin, db: DB) -> UserOut:
+def create_user(body: UserIn, admin: Admin, db: DB) -> UserOut:
     email = body.email.lower()
     if db.scalar(select(User).where(User.email == email)):
         raise HTTPException(409, "A user with this email already exists.")
     u = User(email=email, full_name=body.full_name, password_hash=hash_password(body.password), role=body.role)
     db.add(u)
+    db.flush()
+    audit.record(db, admin, "create", "user", u.id, f"{u.email} as {u.role}")
     db.commit()
     return _out(u)
 
@@ -75,5 +78,6 @@ def update_user(user_id: int, body: UserPatch, admin: Admin, db: DB) -> UserOut:
         u.role = body.role
     if body.is_active is not None:
         u.is_active = body.is_active
+    audit.record(db, admin, "update", "user", u.id, f"{u.email}: {body.model_dump(exclude_none=True)}")
     db.commit()
     return _out(u)

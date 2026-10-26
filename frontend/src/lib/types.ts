@@ -98,6 +98,7 @@ export type RankedMarket = {
   latest_value_usd: number
   components: Record<keyof Weights, Component>
   source: Source
+  existing_market?: boolean
 }
 
 export type CountryDetail = {
@@ -114,18 +115,60 @@ export type CountryDetail = {
   home_share: number | null
 }
 
+export type Relationship = 'buyer' | 'competitor' | 'supplier'
+export type Stage = 'identified' | 'researched' | 'contacted' | 'negotiating' | 'won' | 'lost'
+export type ScoreComponent = { label: string; normalized: number | null; weight: number; status: 'ok' | 'unavailable' }
+
 export type Company = {
   id: number
   name: string
   country_iso3: string
   country_name: string
   website: string
+  relationship_type: Relationship
   roles: string[]
   summary: string
+  product_range: string
+  product_fit: string
+  private_label: 'yes' | 'possible' | 'unknown'
+  private_label_evidence: string
+  buying_signals: { text: string; url: string; title: string }[]
+  markets_served: string[]
+  contact: { email?: string; phone?: string; address?: string; contact_url?: string }
+  name_on_source: boolean | null
+  prospect_score: number | null
+  score_components: Record<string, ScoreComponent>
+  pipeline_stage: Stage
+  notes: string
   hs_codes: string[]
   review_status: 'candidate' | 'verified' | 'rejected'
+  has_brief: boolean
+  brief_generated_at: string | null
   evidence: { id: number; claim: string; excerpt: string; source: Source }[]
 }
+
+export type CompanyBrief = {
+  company: string
+  generated_at: string
+  model: string
+  cost_usd: number
+  sections: { title: string; statements: Statement[] }[]
+  outreach_email: { subject: string; body: string; warnings: string[] }
+  evidence: Evidence[]
+}
+
+export type NewsItem = { title: string; summary: string; date: string; topic: string; url: string; source_title: string }
+
+export type CompanyProfile = {
+  name: string
+  brand: string
+  country_iso3: string
+  founded: string
+  description: string
+  label_languages: string[]
+  certifications: string[]
+}
+export type AppSettings = { company_profile: CompanyProfile; export_markets: string[]; ai_monthly_budget_usd: number }
 
 export type Label = 'verified' | 'estimate' | 'inference' | 'unavailable' | 'unverified'
 export type Statement = { text: string; label: Label; evidence_ids: string[]; issues: string[] }
@@ -135,7 +178,7 @@ export type AskResponse = {
   statements: Statement[]
   follow_up_questions: string[]
   evidence: Evidence[]
-  usage: { model: string; input_tokens: number; output_tokens: number }
+  usage: { model: string; input_tokens: number; output_tokens: number; cost_usd?: number }
 }
 
 export type ReportSummary = {
@@ -170,6 +213,9 @@ export type Quote = {
   destination_iso3: string
   mode: string
   container: string
+  carrier: string
+  incoterm: string
+  assumptions: string
   cost_usd: number | null
   transit_days: number | null
   provenance: string

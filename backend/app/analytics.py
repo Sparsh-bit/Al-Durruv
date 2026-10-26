@@ -122,3 +122,59 @@ def score_markets(markets: list[MarketInput], weights: dict[str, float] | None =
         out.append(ScoredMarket(m.m49, m.iso3, m.name, round(score, 2), year, m.series[year], comps))
 
     return sorted(out, key=lambda r: (-r.score, -r.latest_value))
+
+
+PROSPECT_WEIGHTS = {"market": 30, "role_fit": 20, "private_label": 20, "evidence": 15, "verification": 15}
+ROLE_FIT = {
+    "importer": 1.0,
+    "distributor": 1.0,
+    "wholesaler": 1.0,
+    "brand_owner": 0.8,
+    "retailer": 0.8,
+    "exporter": 0.3,
+    "manufacturer": 0.3,
+}
+PRIVATE_LABEL = {"yes": 1.0, "possible": 0.5}
+
+
+def prospect_score(
+    *,
+    market_score: float | None,
+    roles: list[str],
+    private_label: str,
+    signals: int,
+    name_on_source: bool | None,
+    review_status: str,
+) -> tuple[float, dict]:
+    """Transparent 0-100 fit score for a potential buyer; every component is returned with its weight."""
+    if review_status == "verified":
+        verification = 1.0
+    elif review_status == "rejected":
+        verification = 0.0
+    else:
+        verification = {True: 0.75, None: 0.4, False: 0.1}[name_on_source]
+    raw = {
+        "market": (
+            market_score / 100 if market_score is not None else None,
+            "Opportunity score of the company's market",
+        ),
+        "role_fit": (
+            max((ROLE_FIT.get(r, 0.2) for r in roles), default=0.2),
+            "Business type fit (importer/distributor best)",
+        ),
+        "private_label": (PRIVATE_LABEL.get(private_label, 0.0), "Private-label / own-brand evidence"),
+        "evidence": (min(signals, 3) / 3, "Sourced buying signals (up to 3)"),
+        "verification": (verification, "Verification (analyst review or name found on source)"),
+    }
+    comps = {
+        k: {
+            "label": label,
+            "normalized": None if v is None else round(v, 3),
+            "weight": PROSPECT_WEIGHTS[k],
+            "status": "unavailable" if v is None else "ok",
+        }
+        for k, (v, label) in raw.items()
+    }
+    used = [c for c in comps.values() if c["status"] == "ok"]
+    total = sum(c["weight"] for c in used)
+    return round(100 * sum(c["weight"] * c["normalized"] for c in used) / total, 1), comps

@@ -1,11 +1,15 @@
+from datetime import UTC, datetime, timedelta
+
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
+from app.ai import usage
 from app.analytics import COMPONENT_LABELS, DEFAULT_WEIGHTS
-from app.models import HSCode, Product, RefreshRun, TradeObservation
+from app.config import get_settings
+from app.models import HSCode, MarketNews, Product, RefreshRun, TradeObservation
 from app.security import DB, Analyst, CurrentUser
-from app.services import trade
+from app.services import audit, research, settings, trade
 
 router = APIRouter(prefix="/api/markets", tags=["markets"])
 ACTIVE = ("queued", "running")
@@ -142,7 +146,46 @@ def ranking(hs: str, weights: Weights, _: CurrentUser, db: DB):
     w = weights.model_dump()
     if sum(w.values()) <= 0:
         raise HTTPException(422, "At least one weight must be above zero.")
-    return {"weights": w, "labels": COMPONENT_LABELS, "min_value_usd": 1e6, "markets": trade.ranking(db, hs, w)}
+    ours = set(settings.get(db, "export_markets"))
+    markets = [{**m, "existing_market": m["iso3"] in ours} for m in trade.ranking(db, hs, w)]
+    return {
+        "weights": w,
+        "labels": COMPONENT_LABELS,
+        "min_value_usd": 1e6,
+        "markets": markets,
+        "export_markets_set": bool(ours),
+    }
+
+
+def _latest_news(db, hs: str) -> MarketNews | None:
+    stmt = select(MarketNews).where(MarketNews.hs_code == hs).order_by(MarketNews.retrieved_at.desc()).limit(1)
+    return db.scalar(stmt)
+
+
+@router.get("/{hs}/news")
+def news(hs: str, _: CurrentUser, db: DB):
+    _hs(db, hs)
+    row = _latest_news(db, hs)
+    return {"items": row.items if row else [], "retrieved_at": row.retrieved_at.isoformat() if row else None}
+
+
+class NewsIn(BaseModel):
+    product_name: str = Field("", max_length=255)
+    force: bool = False
+
+
+@router.post("/{hs}/news")
+def refresh_news(hs: str, body: NewsIn, user: Analyst, db: DB):
+    _hs(db, hs)
+    if not get_settings().ai_enabled:
+        raise HTTPException(503, "AI is not configured. Add ANTHROPIC_API_KEY to the backend .env file.")
+    row = _latest_news(db, hs)
+    if row and not body.force and datetime.now(UTC) - row.retrieved_at < timedelta(days=7):
+        return {"items": row.items, "retrieved_at": row.retrieved_at.isoformat(), "cached": True}
+    usage.check_budget(db)
+    audit.record(db, user, "research_news", "market", hs)
+    db.commit()
+    return research.run_news(hs, body.product_name, user.id)
 
 
 @router.get("/{hs}/countries/{m49}")

@@ -1,14 +1,26 @@
-from datetime import datetime
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
 from app.adapters.stubs import FREIGHT, SHIPMENTS
+from app.ai import usage as ai_usage
 from app.config import get_settings
-from app.models import ApiCache, Company, LogisticsQuote, RefreshRun, SourceRecord, TradeObservation
+from app.models import (
+    AiUsage,
+    ApiCache,
+    AuditLog,
+    Company,
+    Country,
+    LogisticsQuote,
+    RefreshRun,
+    SourceRecord,
+    TradeObservation,
+)
 from app.routers.markets import _run_out
 from app.security import DB, Admin, Analyst, CurrentUser
+from app.services import audit, settings
 
 router = APIRouter(prefix="/api", tags=["admin"])
 
@@ -71,7 +83,10 @@ class QuoteIn(BaseModel):
     destination: str = Field(min_length=2, max_length=120)
     destination_iso3: str = Field(min_length=3, max_length=3)
     mode: str = Field(pattern="^(sea|air|road|rail)$")
-    container: str = ""
+    container: str = Field("", max_length=40)
+    carrier: str = Field("", max_length=120)
+    incoterm: str = Field("", pattern="^(|EXW|FCA|FOB|CFR|CIF|CPT|CIP|DAP|DPU|DDP)$")
+    assumptions: str = Field("", max_length=2000)
     cost_usd: float | None = Field(None, ge=0)
     transit_days: int | None = Field(None, ge=0, le=365)
     source_note: str = Field(min_length=3, description="Who quoted it and when")
@@ -86,6 +101,9 @@ def _quote(q: LogisticsQuote) -> dict:
         "destination_iso3": q.destination_iso3,
         "mode": q.mode,
         "container": q.container,
+        "carrier": q.carrier,
+        "incoterm": q.incoterm,
+        "assumptions": q.assumptions,
         "cost_usd": q.cost_usd,
         "transit_days": q.transit_days,
         "provenance": q.provenance,
@@ -111,15 +129,126 @@ def add_quote(body: QuoteIn, user: Analyst, db: DB):
         created_by=user.id,
     )
     db.add(q)
+    db.flush()
+    audit.record(db, user, "create", "logistics_quote", q.id, f"{q.origin} → {q.destination} {q.mode}")
     db.commit()
     db.refresh(q)
     return _quote(q)
 
 
 @router.delete("/logistics/{quote_id}", status_code=204)
-def delete_quote(quote_id: int, _: Analyst, db: DB):
+def delete_quote(quote_id: int, user: Analyst, db: DB):
     q = db.get(LogisticsQuote, quote_id)
     if not q:
         raise HTTPException(404, "Quote not found.")
     db.delete(q)
+    audit.record(db, user, "delete", "logistics_quote", quote_id)
     db.commit()
+
+
+class ProfileIn(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    brand: str = Field("", max_length=120)
+    country_iso3: str = Field(pattern="^[A-Za-z]{3}$")
+    founded: str = Field("", max_length=20)
+    description: str = Field("", max_length=2000)
+    label_languages: list[str] = Field(default_factory=list, max_length=20)
+    certifications: list[str] = Field(default_factory=list, max_length=20)
+
+
+class SettingsIn(BaseModel):
+    company_profile: ProfileIn
+    export_markets: list[str] = Field(default_factory=list, max_length=250)
+    ai_monthly_budget_usd: float = Field(ge=0, le=100000)
+
+
+@router.get("/admin/settings")
+def get_app_settings(_: CurrentUser, db: DB):
+    return {k: settings.get(db, k) for k in settings.DEFAULTS}
+
+
+@router.put("/admin/settings")
+def put_app_settings(body: SettingsIn, user: Admin, db: DB):
+    known = {c.iso3 for c in db.scalars(select(Country)) if c.iso3}
+    markets = sorted({m.strip().upper() for m in body.export_markets if m.strip()})
+    unknown = [m for m in markets if m not in known]
+    if unknown:
+        raise HTTPException(422, f"Unknown country code(s): {', '.join(unknown)}. Use ISO3 codes such as DEU or SWE.")
+    profile = {**body.company_profile.model_dump(), "country_iso3": body.company_profile.country_iso3.upper()}
+    settings.put(db, "company_profile", profile)
+    settings.put(db, "export_markets", markets)
+    settings.put(db, "ai_monthly_budget_usd", body.ai_monthly_budget_usd)
+    audit.record(
+        db, user, "update", "settings", "", f"{len(markets)} export markets, budget ${body.ai_monthly_budget_usd:g}"
+    )
+    db.commit()
+    return {k: settings.get(db, k) for k in settings.DEFAULTS}
+
+
+@router.get("/countries")
+def countries(_: CurrentUser, db: DB):
+    return [{"iso3": c.iso3, "name": c.name} for c in db.scalars(select(Country).order_by(Country.name)) if c.iso3]
+
+
+@router.get("/admin/ai-usage")
+def ai_usage_report(_: Admin, db: DB):
+    start = datetime.now(UTC).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    by_feature = db.execute(
+        select(
+            AiUsage.feature,
+            func.count(),
+            func.sum(AiUsage.cost_usd),
+            func.sum(AiUsage.input_tokens),
+            func.sum(AiUsage.output_tokens),
+            func.sum(AiUsage.web_searches),
+        )
+        .where(AiUsage.created_at >= start)
+        .group_by(AiUsage.feature)
+        .order_by(func.sum(AiUsage.cost_usd).desc())
+    ).all()
+    recent = db.scalars(select(AiUsage).order_by(AiUsage.id.desc()).limit(30)).all()
+    return {
+        "month_spend_usd": ai_usage.month_spend(db),
+        "budget_usd": float(settings.get(db, "ai_monthly_budget_usd")),
+        "model": get_settings().claude_model,
+        "by_feature": [
+            {
+                "feature": f,
+                "calls": n,
+                "cost_usd": round(c or 0, 4),
+                "input_tokens": i or 0,
+                "output_tokens": o or 0,
+                "web_searches": w or 0,
+            }
+            for f, n, c, i, o, w in by_feature
+        ],
+        "recent": [
+            {
+                "at": r.created_at.isoformat(),
+                "feature": r.feature,
+                "model": r.model,
+                "input_tokens": r.input_tokens,
+                "output_tokens": r.output_tokens,
+                "cache_read_tokens": r.cache_read_tokens,
+                "web_searches": r.web_searches,
+                "cost_usd": r.cost_usd,
+            }
+            for r in recent
+        ],
+    }
+
+
+@router.get("/admin/audit")
+def audit_log(_: Admin, db: DB, limit: int = 100):
+    rows = db.scalars(select(AuditLog).order_by(AuditLog.id.desc()).limit(min(limit, 500)))
+    return [
+        {
+            "at": r.created_at.isoformat(),
+            "user": r.user_email,
+            "action": r.action,
+            "entity": r.entity,
+            "entity_id": r.entity_id,
+            "detail": r.detail,
+        }
+        for r in rows
+    ]
