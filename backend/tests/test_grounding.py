@@ -129,3 +129,11 @@ def test_live_brief_false_positives_are_fixed():
         ]["label"]
         == "unverified"
     )
+
+
+def test_out_of_100_is_a_scale():
+    ev = [Evidence("E1", "score", "scores", [85.0, 81.7, 80.8])]
+    out = validate_statements(
+        [{"text": "Scores were 85.0, 81.7 and 80.8 out of 100.", "label": "verified", "evidence_ids": ["E1"]}], ev
+    )
+    assert out[0]["label"] == "verified"

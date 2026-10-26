@@ -1,6 +1,8 @@
+import time
+from collections import defaultdict, deque
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
@@ -24,11 +26,29 @@ def _out(u: User) -> UserOut:
     return UserOut(id=u.id, email=u.email, full_name=u.full_name, role=u.role, is_active=u.is_active)
 
 
+# ponytail: in-memory limiter, fine for the single-process deployment; move to Redis if scaled out.
+FAILED: dict[str, deque[float]] = defaultdict(deque)
+MAX_FAILURES, WINDOW_S = 10, 15 * 60
+
+
+def _too_many(key: str) -> bool:
+    q, now = FAILED[key], time.monotonic()
+    while q and now - q[0] > WINDOW_S:
+        q.popleft()
+    return len(q) >= MAX_FAILURES
+
+
 @router.post("/login")
-def login(form: Annotated[OAuth2PasswordRequestForm, Depends()], db: DB):
-    user = db.scalar(select(User).where(User.email == form.username.lower().strip()))
+def login(form: Annotated[OAuth2PasswordRequestForm, Depends()], request: Request, db: DB):
+    email = form.username.lower().strip()
+    key = f"{request.client.host if request.client else '?'}|{email}"
+    if _too_many(key):
+        raise HTTPException(429, "Too many failed sign-in attempts. Try again in 15 minutes.")
+    user = db.scalar(select(User).where(User.email == email))
     if not user or not user.is_active or not verify_password(form.password, user.password_hash):
+        FAILED[key].append(time.monotonic())
         raise HTTPException(401, "Incorrect email or password.")
+    FAILED.pop(key, None)
     return {"access_token": create_token(user), "token_type": "bearer", "user": _out(user)}
 
 

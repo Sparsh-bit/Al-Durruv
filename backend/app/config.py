@@ -1,15 +1,20 @@
 from functools import lru_cache
 
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+DEV_JWT_SECRET = "dev-only-change-me"
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=(".env", "../.env"), extra="ignore")
 
+    environment: str = "development"  # set to "production" on Railway
     database_url: str = "postgresql+psycopg://trade:trade@localhost:5433/trade_intel"
-    jwt_secret: str = "dev-only-change-me"
+    jwt_secret: str = DEV_JWT_SECRET
     jwt_ttl_minutes: int = 60 * 12
     cors_origins: str = "http://localhost:5173"
+    frontend_dist: str = ""  # path to the built React app; defaults to ../frontend/dist
 
     admin_email: str = "admin@example.com"
     admin_password: str = ""
@@ -25,6 +30,28 @@ class Settings(BaseSettings):
 
     # ISO3 of the exporter's own country; enables "your country's share" in rankings.
     home_country_iso3: str = ""
+
+    @field_validator("database_url")
+    @classmethod
+    def _psycopg_driver(cls, v: str) -> str:
+        # Neon and Railway hand out postgres:// or postgresql:// URLs; SQLAlchemy needs the psycopg driver name.
+        for prefix in ("postgres://", "postgresql://"):
+            if v.startswith(prefix):
+                return "postgresql+psycopg://" + v[len(prefix) :]
+        return v
+
+    @model_validator(mode="after")
+    def _production_safety(self):
+        if self.is_production:
+            if self.jwt_secret == DEV_JWT_SECRET or len(self.jwt_secret) < 32:
+                raise ValueError("JWT_SECRET must be set to a random string of 32+ characters in production.")
+            if "localhost" in self.database_url:
+                raise ValueError("DATABASE_URL points at localhost in production; set it to the Neon URL.")
+        return self
+
+    @property
+    def is_production(self) -> bool:
+        return self.environment.lower() == "production"
 
     @property
     def ai_enabled(self) -> bool:

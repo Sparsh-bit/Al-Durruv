@@ -11,7 +11,7 @@ from pathlib import Path
 
 import comtradeapicall
 import pandas as pd
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 
 from app.config import get_settings
@@ -38,7 +38,10 @@ def load_hs_codes(db) -> int:
 def main(replace_products: bool = False) -> None:
     s = get_settings()
     with SessionLocal() as db:
-        print(f"HS codes loaded: {load_hs_codes(db)}")
+        if db.scalar(select(func.count()).select_from(HSCode)) > 6000:
+            print("HS reference list already loaded.")
+        else:
+            print(f"HS codes loaded: {load_hs_codes(db)}")
         if not db.scalar(select(User).where(User.role == Role.admin)):
             if len(s.admin_password) < 10:
                 raise SystemExit("Set ADMIN_PASSWORD (10+ characters) in .env before seeding.")

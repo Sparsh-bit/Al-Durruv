@@ -73,4 +73,9 @@ uv run alembic revision --autogenerate -m "describe change"
 uv run alembic upgrade head
 ```
 
+## Deployment
+
+Production runs as one Docker service (Railway) with Neon PostgreSQL: see `docs/DEPLOY.md` for settings,
+resources and the full environment-variable list.
+
 See `docs/HANDOVER.md` for what works, what is estimated, and what remains for production.

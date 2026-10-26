@@ -600,3 +600,28 @@ def test_company_and_list_exports(db, analyst):
     body = analyst.get(f"/api/prospect-lists/{lid}/export").content.decode("utf-8-sig")
     assert "Acme Foods" in body and "sales@acme.example" in body
     assert "Acme Foods" in analyst.get("/api/companies/export?relationship=buyer").content.decode("utf-8-sig")
+
+
+def test_name_check_handles_entities_brackets_and_suffixes():
+    assert research.name_in_text("John & Pascalis", "<h1>John &amp; Pascalis</h1>") is True
+    assert research.name_in_text("Katsouris Brothers Ltd (Cypressa)", "<p>Katsouris  Brothers supply</p>") is True
+    assert research.name_in_text("Acme Foods Ltd", "<p>Other company</p>") is False
+
+
+def test_login_rate_limit():
+    from app.routers import auth as auth_router
+
+    auth_router.FAILED.clear()
+    c = TestClient(app)
+    codes = [
+        c.post("/api/auth/login", data={"username": "viewer@example.com", "password": "nope"}).status_code
+        for _ in range(11)
+    ]
+    assert codes[:10] == [401] * 10 and codes[10] == 429
+    auth_router.FAILED.clear()
+
+
+def test_security_headers_and_api_404():
+    c = TestClient(app)
+    r = c.get("/api/health")
+    assert r.headers["x-content-type-options"] == "nosniff" and r.headers["cache-control"] == "no-store"

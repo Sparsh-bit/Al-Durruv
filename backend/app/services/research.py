@@ -8,6 +8,7 @@ Guardrails applied to every candidate:
 - stored as "candidate" until an analyst verifies it.
 """
 
+import html
 import logging
 import re
 from concurrent.futures import ThreadPoolExecutor
@@ -147,6 +148,15 @@ def validate_candidates(
     return kept, dropped
 
 
+def name_in_text(name: str, page: str) -> bool | None:
+    """Does the company name appear in the page? Handles HTML entities, legal suffixes and bracketed notes."""
+    text = re.sub(r"\s+", " ", html.unescape(_TAGS.sub(" ", page))).casefold()
+    core = re.sub(r"\(.*?\)", "", name.casefold())
+    core = re.sub(r"\b(ltd|limited|inc|llc|gmbh|s\.?a\.?|plc|co|corp|b\.?v\.?)\b\.?", "", core)
+    core = re.sub(r"\s+", " ", core).strip(" .,-")
+    return core in text if core else None
+
+
 def _name_on_page(url: str, name: str) -> bool | None:
     if not url.startswith(("http://", "https://")):
         return None
@@ -154,9 +164,7 @@ def _name_on_page(url: str, name: str) -> bool | None:
         r = httpx.get(url, timeout=8, follow_redirects=True, headers={"User-Agent": "Mozilla/5.0 TradeIntel/0.1"})
         if r.status_code >= 400:
             return None
-        text = _TAGS.sub(" ", r.text).casefold()
-        core = re.sub(r"\b(ltd|limited|inc|llc|gmbh|s\.?a\.?|plc|co|corp|b\.?v\.?)\b\.?", "", name.casefold()).strip()
-        return core in text if core else None
+        return name_in_text(name, r.text)
     except httpx.HTTPError:
         return None
 

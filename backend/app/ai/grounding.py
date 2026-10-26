@@ -49,6 +49,7 @@ _NUM = re.compile(
     r"thousand|k\b|b\b)?",
     re.IGNORECASE,
 )
+_OUT_OF = re.compile(r"\bout of 100\b", re.IGNORECASE)
 _DATE = re.compile(r"\b\d{4}-\d{2}(?:-\d{2})?\b")
 _HS_PREFIX = re.compile(r"\bHS(?:\s*code)?\s*$", re.IGNORECASE)
 _MULT = {"billion": 1e9, "bn": 1e9, "b": 1e9, "million": 1e6, "mn": 1e6, "m": 1e6, "thousand": 1e3, "k": 1e3}
@@ -57,6 +58,7 @@ _MULT = {"billion": 1e9, "bn": 1e9, "b": 1e9, "million": 1e6, "mn": 1e6, "m": 1e
 def extract_numbers(text: str) -> list[float]:
     out = []
     text = _DATE.sub(" ", text)  # "2026-09-25" is a date, not three quantities
+    text = _OUT_OF.sub(" ", text)  # "out of 100" is a scale, not a claim
     for m in _NUM.finditer(text):
         if _HS_PREFIX.search(text[max(0, m.start() - 12) : m.start()]):
             continue  # "HS 190531" is a product code, not a quantity
