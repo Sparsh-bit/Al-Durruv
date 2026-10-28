@@ -39,24 +39,24 @@ def test_product_crud_validates_hs(analyst):
     assert analyst.post("/api/products", json={"sku": "X1", "name": "Dup", "hs_code": "190531"}).status_code == 409
 
 
-def test_csv_import_reports_row_errors_and_restores_leading_zero(analyst, db):
+def test_csv_import_reports_row_errors_and_restores_leading_zero(analyst, db, admin):
     csv = b"SKU,Name,HS Code\nC1,Coffee,90111\nB1,Biscuits,190531.0\nZ1,Bad,123\n,NoSku,190531\n"
-    r = analyst.post("/api/products/import", files={"file": ("p.csv", csv, "text/csv")})
+    r = admin.post("/api/products/import", files={"file": ("p.csv", csv, "text/csv")})
     body = r.json()
     assert r.status_code == 200 and body["created"] == 2 and len(body["errors"]) == 2
     assert {e["line"] for e in body["errors"]} == {4, 5}
     assert db.scalar(select(Product.hs_code).where(Product.sku == "C1")) == "090111"
     # re-import updates instead of duplicating
-    r = analyst.post(
+    r = admin.post(
         "/api/products/import", files={"file": ("p.csv", b"sku,name,hs_code\nC1,Coffee beans,090111\n", "text/csv")}
     )
     assert r.json() == {"created": 0, "updated": 1, "errors": []}
 
 
-def test_import_rejects_missing_columns_and_bad_type(analyst):
-    r = analyst.post("/api/products/import", files={"file": ("p.csv", b"sku\nA\n", "text/csv")})
+def test_import_rejects_missing_columns_and_bad_type(analyst, admin):
+    r = admin.post("/api/products/import", files={"file": ("p.csv", b"sku\nA\n", "text/csv")})
     assert r.status_code == 422 and "name" in r.json()["detail"]
-    assert analyst.post("/api/products/import", files={"file": ("p.txt", b"x", "text/plain")}).status_code == 415
+    assert admin.post("/api/products/import", files={"file": ("p.txt", b"x", "text/plain")}).status_code == 415
 
 
 # ---------- comtrade adapter: cache, retries, provenance ----------
@@ -271,8 +271,8 @@ def test_brief_requires_trade_data(analyst, ai_on):
     assert analyst.post("/api/reports", json={"product_id": pid}).status_code == 409
 
 
-def test_logistics_quotes_are_labelled_client_provided(analyst, viewer):
-    r = analyst.post(
+def test_logistics_quotes_are_labelled_client_provided(analyst, viewer, admin):
+    r = admin.post(
         "/api/logistics",
         json={
             "origin": "Jebel Ali",
@@ -288,7 +288,7 @@ def test_logistics_quotes_are_labelled_client_provided(analyst, viewer):
     data = viewer.get("/api/logistics?destination_iso3=GBR").json()
     assert len(data["quotes"]) == 1 and {p["status"] for p in data["providers"]} == {"not_connected"}
     assert (
-        analyst.post(
+        admin.post(
             "/api/logistics",
             json={"origin": "A", "destination": "B", "destination_iso3": "GBR", "mode": "teleport", "source_note": "x"},
         ).status_code
@@ -299,13 +299,13 @@ def test_logistics_quotes_are_labelled_client_provided(analyst, viewer):
 # ---------- catalogue details, export, bulk refresh ----------
 
 
-def test_import_catalogue_columns_and_hs_status_reset(analyst, db):
+def test_import_catalogue_columns_and_hs_status_reset(analyst, db, admin):
     csv = (
         b"sku,name,brand,category,hs_code,pack_size,net_quantity,net_unit,packaging,catalogue_page,hs_status\n"
         b'D1,Apricot Jam,Durra,Jams,190531,800 g,800,g,Glass jar,"3, 5",confirmed\n'
         b"D2,Bad qty,Durra,Jams,190531,x,abc,g,Jar,7,\n"
     )
-    r = analyst.post("/api/products/import", files={"file": ("c.csv", csv, "text/csv")}).json()
+    r = admin.post("/api/products/import", files={"file": ("c.csv", csv, "text/csv")}).json()
     assert r["created"] == 2 and r["errors"] == []
     p = db.scalar(select(Product).where(Product.sku == "D1"))
     assert (p.brand, p.pack_size, p.net_quantity, p.packaging, p.hs_status) == (
@@ -319,7 +319,7 @@ def test_import_catalogue_columns_and_hs_status_reset(analyst, db):
     listed = next(x for x in analyst.get("/api/products").json() if x["sku"] == "D1")
     assert listed["catalogue_pages"] == [3, 5]
     # changing the HS code without confirming it again resets the status
-    analyst.post(
+    admin.post(
         "/api/products/import", files={"file": ("c.csv", b"sku,name,hs_code\nD1,Apricot Jam,090111\n", "text/csv")}
     )
     db.expire_all()
@@ -347,14 +347,14 @@ def test_product_validation_and_export(analyst):
     assert "E1,Ketchup" in exp.content.decode("utf-8-sig")
 
 
-def test_refresh_missing_queues_each_code_once(analyst, viewer, monkeypatch):
+def test_refresh_missing_queues_each_code_once(analyst, viewer, monkeypatch, admin):
     calls = []
     monkeypatch.setattr(trade, "refresh_many", lambda jobs: calls.append(jobs))
     for sku, hs in (("A", "190531"), ("B", "190531"), ("C", "090111")):
         analyst.post("/api/products", json={"sku": sku, "name": sku, "hs_code": hs})
-    first = analyst.post("/api/markets/refresh-missing").json()
+    first = admin.post("/api/markets/refresh-missing").json()
     assert first == {"queued": 2, "already_active": 0} and [h for _, h in calls[0]] == ["090111", "190531"]
-    assert analyst.post("/api/markets/refresh-missing").json() == {"queued": 0, "already_active": 2}
+    assert admin.post("/api/markets/refresh-missing").json() == {"queued": 0, "already_active": 2}
     status = viewer.get("/api/markets/status").json()
     assert status["hs_codes"] == 2 and status["loaded"] == 0 and len(status["active"]) == 2
     assert viewer.post("/api/markets/refresh-missing").status_code == 403
@@ -520,8 +520,8 @@ def test_settings_validation_and_export_market_flag(db, admin, analyst):
     assert analyst.put("/api/admin/settings", json=body).status_code == 403
     ok = admin.put("/api/admin/settings", json=body).json()
     assert ok["priority_categories"] == ["Pickles", "Sauces"] and ok["company_profile"]["country_iso3"] == "SYR"
-    assert analyst.put("/api/target-markets/XXX", json={"segment": "existing"}).status_code == 422
-    assert analyst.put("/api/target-markets/gbr", json={"segment": "existing"}).status_code == 200
+    assert admin.put("/api/target-markets/XXX", json={"segment": "existing"}).status_code == 422
+    assert admin.put("/api/target-markets/gbr", json={"segment": "existing"}).status_code == 200
     markets = analyst.post("/api/markets/190531/ranking", json={}).json()["markets"]
     assert {m["iso3"]: m["existing_market"] for m in markets} == {"GBR": True, "DEU": False}
     log = admin.get("/api/admin/audit").json()
@@ -556,31 +556,41 @@ def test_company_brief_is_validated_and_logged(db, analyst, admin, ai_on, monkey
 
     _load(db)
     cid = _company(db, relationship_type="buyer")
+    calls = []
 
-    def fake(name, evidence):
+    def draft(invented: bool, evidence):
         st = claude_mod.Statement
+        text = "They buy 40 containers a month." if invented else "Order volumes are not in the records."
         return claude_mod.CompanyBrief(
             sections=[
                 claude_mod.BriefSection(
                     title="Purchasing pattern and volumes",
-                    statements=[
-                        st(text="They buy 40 containers a month.", label="estimate", evidence_ids=[]),
-                        st(text="Order volumes are unknown.", label="unavailable", evidence_ids=[evidence[-1].id]),
-                    ],
+                    statements=[st(text=text, label="unavailable", evidence_ids=[evidence[-1].id])],
                 )
             ],
-            outreach_email=claude_mod.Email(subject="Private label", body="We can supply 500 tonnes a month."),
+            outreach_email=claude_mod.Email(subject="Private label", body="We make private-label pickles."),
+            whatsapp_message="مرحبا، نحن مصنع للعلامات الخاصة." if not invented else "We ship 500 tonnes.",
         ), {"model": "claude-haiku-5-5", "input_tokens": 1000, "output_tokens": 500}
 
+    def fake(name, evidence, language, feedback):
+        calls.append((language, feedback))
+        return draft(invented=len(calls) == 1, evidence=evidence)
+
     monkeypatch.setattr(claude_mod, "write_company_brief", fake)
-    b = analyst.post(f"/api/companies/{cid}/brief").json()
-    labels = [s["label"] for s in b["sections"][0]["statements"]]
-    assert labels == ["unverified", "unavailable"]  # invented volume is withheld
-    assert b["outreach_email"]["warnings"]  # numbers not in evidence are flagged
-    assert analyst.get(f"/api/companies/{cid}").status_code in (404, 405)  # no stray route
-    assert analyst.get(f"/api/companies/{cid}/brief").json()["company"] == "Acme Foods"
+    b = analyst.post(f"/api/companies/{cid}/brief", json={"language": "ar"}).json()
+    assert len(calls) == 2 and "40" in calls[1][1] and calls[1][0] == "ar"  # retried once with feedback
+    assert b["language"] == "ar" and b["prompt_version"] and b["whatsapp_message"].startswith("مرحبا")
+    assert analyst.get(f"/api/companies/{cid}/briefs").json()[0]["language"] == "ar"
+    pdf = analyst.get(f"/api/companies/{cid}/brief/pdf")
+    assert pdf.status_code == 200 and pdf.content[:4] == b"%PDF"
     report = admin.get("/api/admin/ai-usage").json()
-    assert report["by_feature"][0]["feature"] == "company_brief" and report["month_spend_usd"] > 0
+    assert report["by_feature"][0]["feature"] == "company_brief" and report["by_feature"][0]["calls"] == 2
+
+    calls.clear()
+    monkeypatch.setattr(claude_mod, "write_company_brief", lambda *a: (calls.append(1), draft(True, a[1]))[1])
+    r = analyst.post(f"/api/companies/{cid}/brief", json={"language": "en"})
+    assert r.status_code == 502 and len(calls) == 2  # rejected after one retry
+    assert analyst.get(f"/api/companies/{cid}/brief").json()["language"] == "ar"  # nothing unverified saved
 
 
 def test_news_keeps_only_retrieved_sources(db, analyst, ai_on, monkeypatch):
@@ -705,7 +715,7 @@ def test_bulk_store_dedupes_rows_within_a_response(db):
     assert db.scalar(select(TradeObservation.value_usd)) == 2.0
 
 
-def test_heartbeat_decides_liveness_not_restarts(db, analyst):
+def test_heartbeat_decides_liveness_not_restarts(db, analyst, admin):
     from datetime import UTC, datetime, timedelta
 
     from app.models import RefreshRun
@@ -726,7 +736,7 @@ def test_heartbeat_decides_liveness_not_restarts(db, analyst):
     db.expire_all()
     assert db.get(RefreshRun, fresh.id).status == "running" and db.get(RefreshRun, stale.id).status == "failed"
     # a live job blocks a duplicate refresh; the API reports a stale job as failed
-    assert analyst.post("/api/markets/190531/refresh").json()["id"] == fresh.id
+    assert admin.post("/api/markets/190531/refresh").json()["id"] == fresh.id
     jobs.beat([fresh.id])
     db.expire_all()
     assert jobs.is_live(db.get(RefreshRun, fresh.id))

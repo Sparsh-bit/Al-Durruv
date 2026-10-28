@@ -5,6 +5,11 @@ import clsx from 'clsx'
 import {
   ArrowUpRight,
   BarChart3,
+  Bell,
+  Calculator,
+  DatabaseZap,
+  Languages,
+  UserSearch,
   Boxes,
   Building2,
   ChevronDown,
@@ -28,10 +33,10 @@ import {
 } from 'lucide-react'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { NavLink, Outlet, useLocation, useMatch, useNavigate } from 'react-router'
-import { api } from '../lib/api'
+import { api, patch } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { slideTo } from '../lib/motion'
-import type { AppSettings, Company, Product } from '../lib/types'
+import type { AlertItem, AppSettings, Company, Product, User } from '../lib/types'
 import { ClientMark, PoweredBy } from './Brand'
 import ChangePassword from './ChangePassword'
 
@@ -134,17 +139,21 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         <Group label="Markets">
           <Item to="/explorer" icon={<LineChart />}>Trade explorer</Item>
           <Item to="/markets" icon={<Globe2 />}>Markets &amp; regions</Item>
+          <Item to="/access" icon={<Calculator />}>Landed cost</Item>
           <Item to="/opportunities" icon={<Tags />}>Private-label engine</Item>
         </Group>
         <Group label="Accounts">
+          <Item to="/buyers" icon={<UserSearch />}>Buyer finder</Item>
           <Item to="/accounts" icon={<Store />}>Retailers &amp; competitors</Item>
           <Item to="/pipeline" icon={<KanbanSquare />}>CRM pipeline</Item>
+          <Item to="/alerts" icon={<Bell />}>Alerts</Item>
         </Group>
         <Group label="Client &amp; system">
           <Item to="/client" icon={<CircleHelp />}>Questions &amp; entities</Item>
           <Item to="/reports" icon={<FileText />}>AI reports</Item>
           <Item to="/logistics" icon={<Ship />}>Logistics</Item>
           <Item to="/integrations" icon={<PlugZap />}>Integration health</Item>
+          {can('admin') && <Item to="/data" icon={<DatabaseZap />}>Data admin</Item>}
           {can('admin') && <Item to="/admin" icon={<Settings2 />}>Administration</Item>}
         </Group>
       </div>
@@ -223,8 +232,24 @@ function SearchPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (v
   )
 }
 
+function AlertBell() {
+  const navigate = useNavigate()
+  const unread = useQuery({ queryKey: ['alerts', 'unread'], queryFn: () => api<AlertItem[]>('/api/alerts?unread=true'), refetchInterval: 120_000 })
+  const n = unread.data?.length ?? 0
+  return (
+    <button type="button" onClick={() => navigate('/alerts')} className="relative rounded-[9px] p-2 text-body hover:bg-fog" aria-label={`Alerts${n ? `, ${n} unread` : ''}`}>
+      <Bell className="size-[18px]" />
+      {n > 0 && <span className="num absolute -top-0.5 -right-0.5 min-w-4 rounded-full bg-ink-900 px-1 text-center text-[10px] leading-4 text-white">{n > 99 ? '99+' : n}</span>}
+    </button>
+  )
+}
+
 function TopBar({ onMenu, onSearch }: { onMenu: () => void; onSearch: () => void }) {
-  const { user, logout } = useAuth()
+  const { user, logout, refresh } = useAuth()
+  const setLanguage = async (language: 'en' | 'ar') => {
+    await patch<User>('/api/auth/me', { language })
+    await refresh()
+  }
   const [pwOpen, setPwOpen] = useState(false)
   const client = useClient()
   return (
@@ -244,6 +269,7 @@ function TopBar({ onMenu, onSearch }: { onMenu: () => void; onSearch: () => void
           <Search className="size-4" /> <span className="flex-1 text-left">Search</span>
           <kbd className="micro rounded border border-line px-1.5 py-0.5">⌘K</kbd>
         </button>
+        <AlertBell />
         <Menu.Root>
           <Menu.Trigger className="flex items-center gap-2 rounded-[9px] py-1 pr-1.5 pl-1 hover:bg-fog" aria-label="Account menu">
             <span className="flex size-7.5 items-center justify-center rounded-full bg-brand-100 text-[12.5px] font-semibold text-brand-700">
@@ -258,6 +284,9 @@ function TopBar({ onMenu, onSearch }: { onMenu: () => void; onSearch: () => void
           <Menu.Portal>
             <Menu.Content align="end" sideOffset={6} className="z-50 w-56 rounded-[12px] border border-line bg-white p-1 shadow-pop">
               <div className="px-3 py-2 text-xs text-muted">{user?.email}</div>
+              <Menu.Item onSelect={() => setLanguage(user?.language === 'ar' ? 'en' : 'ar')} className="flex cursor-pointer items-center gap-2 rounded-[8px] px-3 py-2 text-[13px] text-ink-800 outline-none data-highlighted:bg-fog">
+                <Languages className="size-4" /> AI output: {user?.language === 'ar' ? 'العربية (switch to English)' : 'English (switch to Arabic)'}
+              </Menu.Item>
               <Menu.Item onSelect={() => setPwOpen(true)} className="flex cursor-pointer items-center gap-2 rounded-[8px] px-3 py-2 text-[13px] text-ink-800 outline-none data-highlighted:bg-fog">
                 <KeyRound className="size-4" /> Change password
               </Menu.Item>

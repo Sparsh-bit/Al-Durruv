@@ -19,7 +19,7 @@ from app.db import SessionLocal
 from app.models import Country, HSCode, Product, Role, User
 from app.routers.catalogue import apply_catalogue
 from app.security import hash_password
-from app.services import client_data
+from app.services import client_data, shipments
 
 CATALOGUE = Path(__file__).parent.parent / "data" / "durra_catalogue.csv"
 
@@ -91,6 +91,8 @@ def main(replace_products: bool = False) -> None:
             for e in result["errors"]:
                 print(f"  line {e['line']}: {e['error']}")
         print(f"Client data: {client_data.apply(db)}")
+        print(f"Company names normalised: {shipments.backfill_normalized(db)}")
+        db.commit()
 
 
 if __name__ == "__main__":

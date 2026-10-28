@@ -28,7 +28,7 @@ class AskIn(BaseModel):
 def ask(body: AskIn, user: CurrentUser, db: DB):
     if not db.get(HSCode, body.hs_code):
         raise HTTPException(404, f"Unknown HS code {body.hs_code}.")
-    ai_usage.check_budget(db)
+    ai_usage.check_budget(db, user.id)
     evidence = build_context(db, body.hs_code, body.focus_m49)
     answer, usage = claude.answer_question(body.question, evidence, [t.model_dump() for t in body.history])
     usage["cost_usd"] = ai_usage.record(db, user.id, "analyst", usage)

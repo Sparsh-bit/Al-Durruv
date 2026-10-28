@@ -11,8 +11,9 @@ from app.adapters import comtrade
 from app.ai import usage
 from app.analytics import COMPONENT_LABELS, DEFAULT_WEIGHTS
 from app.config import get_settings
+from app.exports import safe_df
 from app.models import HSCode, MarketNews, Product, RefreshRun, TargetMarket, TradeObservation
-from app.security import DB, Analyst, CurrentUser
+from app.security import DB, Admin, Analyst, CurrentUser
 from app.services import audit, explore, jobs, opportunities, research, trade
 
 router = APIRouter(prefix="/api/markets", tags=["markets"])
@@ -57,7 +58,7 @@ def overview(hs: str, _: CurrentUser, db: DB):
 
 
 @router.post("/{hs}/refresh", status_code=202)
-def refresh(hs: str, user: Analyst, db: DB, tasks: BackgroundTasks):
+def refresh(hs: str, user: Admin, db: DB, tasks: BackgroundTasks):
     _hs(db, hs)
     running = latest_run(db, hs)
     if jobs.is_live(running):
@@ -91,7 +92,7 @@ def _coverage(db) -> dict[str, tuple[str, RefreshRun | None]]:
 
 
 @router.post("/refresh-missing", status_code=202)
-def refresh_missing(user: Analyst, db: DB, tasks: BackgroundTasks):
+def refresh_missing(user: Admin, db: DB, tasks: BackgroundTasks):
     """Queue a refresh for every catalogue HS code that is not loaded and not already being refreshed."""
     jobs, already = [], 0
     for hs, (state, _) in _coverage(db).items():
@@ -194,7 +195,7 @@ class LiveFetchIn(BaseModel):
 
 
 @router.post("/{hs}/explore/fetch")
-def explore_fetch(hs: str, body: LiveFetchIn, user: Analyst, db: DB):
+def explore_fetch(hs: str, body: LiveFetchIn, user: Admin, db: DB):
     """Pull exactly the chosen slice from UN Comtrade (cached; identical requests are not repeated)."""
     _hs(db, hs)
     this_year = datetime.now(UTC).year
@@ -254,7 +255,7 @@ def refresh_news(hs: str, body: NewsIn, user: Analyst, db: DB):
     row = _latest_news(db, hs)
     if row and not body.force and datetime.now(UTC) - row.retrieved_at < timedelta(days=7):
         return {"items": row.items, "retrieved_at": row.retrieved_at.isoformat(), "cached": True}
-    usage.check_budget(db)
+    usage.check_budget(db, user.id)
     audit.record(db, user, "research_news", "market", hs)
     db.commit()
     return research.run_news(hs, body.product_name, user.id)
@@ -280,7 +281,7 @@ def private_label_opportunities(body: OpportunityWeights, _: CurrentUser, db: DB
 
 
 @router.get("/opportunities/export")
-def export_opportunities(_: CurrentUser, db: DB):
+def export_opportunities(user: CurrentUser, db: DB):
     result = opportunities.compute(db)
     rows = [
         {
@@ -300,7 +301,9 @@ def export_opportunities(_: CurrentUser, db: DB):
         for r in result["rows"]
     ]
     meta = f"# Weights: {result['weights']}. Source: UN Comtrade (stored observations) and sourced retailer facts.\n"
-    body = meta + pd.DataFrame(rows).to_csv(index=False)
+    body = meta + safe_df(pd.DataFrame(rows)).to_csv(index=False)
+    audit.record(db, user, "export", "opportunities", "", f"{len(rows)} rows")
+    db.commit()
     return Response(
         body.encode("utf-8-sig"),
         media_type="text/csv",

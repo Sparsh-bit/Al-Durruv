@@ -1,16 +1,155 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ExternalLink, ShieldAlert, Store } from 'lucide-react'
+import { ExternalLink, ShieldAlert, Store, Tags } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { Badge, Button, Card, CountryChip, EmptyState, Field, Input, Notice, PageHeader, Segmented, Select, Skeleton, SourceLink, Textarea } from '../components/ui'
-import { api, download, patch } from '../lib/api'
+import { api, download, patch, put } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { date } from '../lib/format'
 import { IDENTITY, PL_META, STAGES } from '../lib/labels'
 import { useReveal } from '../lib/motion'
-import type { Company, Identity, Stage, User } from '../lib/types'
+import type { Company, CompetitorTracker, Identity, Requirement, RetailerPath, Stage, User } from '../lib/types'
+import AccountBrief from '../components/AccountBrief'
+import { num } from '../lib/format'
 
 type Kind = 'retailer' | 'competitor'
+
+const REQ_STATUS: Record<Requirement['status'], { text: string; tone: 'slate' | 'amber' | 'green' }> = {
+  todo: { text: 'To do', tone: 'slate' },
+  in_progress: { text: 'In progress', tone: 'amber' },
+  met: { text: 'Met', tone: 'green' },
+  not_applicable: { text: 'N/A', tone: 'slate' },
+}
+
+function RetailerPathPanel({ id }: { id: number }) {
+  const { can } = useAuth()
+  const qc = useQueryClient()
+  const path = useQuery({ queryKey: ['retailer-path', id], queryFn: () => api<RetailerPath>(`/api/retailers/${id}/path`) })
+  const setStatus = useMutation({
+    mutationFn: ({ rid, status }: { rid: number; status: Requirement['status'] }) => patch(`/api/requirements/${rid}`, { status }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['retailer-path', id] }),
+  })
+  const d = path.data
+  if (!d) return <Skeleton className="m-5 h-32" />
+  return (
+    <div className="grid gap-5 p-5 lg:grid-cols-2">
+      <div>
+        <div className="micro mb-2 text-muted">Direct imports (shipment records)</div>
+        {d.direct_importer ? (
+          <>
+            <p className="text-[13px] text-ink-900">{d.direct_shipments} shipments on record as consignee, {d.direct_client_hs_shipments} under your HS codes.</p>
+            <ul className="mt-2 space-y-1 text-[12.5px]">
+              {d.suppliers.slice(0, 6).map((s) => (
+                <li key={s.shipper} className="flex justify-between gap-3"><span className="truncate">{s.shipper} <CountryChip iso3={s.origin_iso3} /></span><span className="num text-muted">{num(Math.round(s.weight_kg))} kg</span></li>
+              ))}
+            </ul>
+          </>
+        ) : (
+          <p className="text-[13px] text-body">Not found as a direct importer in the uploaded shipment files.</p>
+        )}
+        <div className="micro mt-4 mb-2 text-muted">Likely route in: importers of your categories in its markets</div>
+        {d.route_in.length === 0 ? (
+          <p className="text-[13px] text-muted">None found yet in the shipment files for {d.company.markets.join(', ') || 'its markets'}.</p>
+        ) : (
+          <ul className="space-y-1 text-[12.5px]">
+            {d.route_in.slice(0, 6).map((b) => (
+              <li key={b.company.id} className="flex justify-between gap-3"><span className="truncate">{b.company.name}</span><span className="num text-muted">fit {b.score?.toFixed(0) ?? '—'}</span></li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <div>
+        <div className="micro mb-2 text-muted">Supplier requirements (sourced, admin-maintained)</div>
+        {d.requirements.length === 0 ? <p className="text-[13px] text-muted">None recorded.</p> : (
+          <ul className="space-y-2.5">
+            {d.requirements.map((r) => (
+              <li key={r.id} className="rounded-[9px] border border-line-soft p-2.5 text-[12.5px]">
+                <div className="flex items-start justify-between gap-2">
+                  <span className="font-medium text-ink-900">{r.title}{r.market_iso3 && <span className="ml-1 text-muted">({r.market_iso3})</span>}</span>
+                  {can('analyst') ? (
+                    <Select className="h-7.5! w-auto! py-0 text-[12px]" value={r.status} onChange={(e) => setStatus.mutate({ rid: r.id, status: e.target.value as Requirement['status'] })} aria-label={`Status of ${r.title}`}>
+                      {Object.entries(REQ_STATUS).map(([k, v]) => <option key={k} value={k}>{v.text}</option>)}
+                    </Select>
+                  ) : <Badge tone={REQ_STATUS[r.status].tone}>{REQ_STATUS[r.status].text}</Badge>}
+                </div>
+                {r.detail && <p className="mt-1 text-body">{r.detail}</p>}
+                <div className="mt-1 flex items-center gap-2 text-[11px] text-muted"><SourceLink source={{ url: r.source_url }} compact />{r.verified_at && <span>verified {date(r.verified_at)}</span>}</div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function CompetitorPanel({ id }: { id: number }) {
+  const t = useQuery({ queryKey: ['competitor', id], queryFn: () => api<CompetitorTracker>(`/api/competitors/${id}/tracker`) })
+  const d = t.data
+  if (!d) return <Skeleton className="m-5 h-32" />
+  if (d.shipments === 0) {
+    return <p className="p-5 text-[13px] text-body">No shipments by this company or its aliases in the uploaded files yet. Upload provider files that cover its exports to track its buyers.</p>
+  }
+  return (
+    <div className="grid gap-5 p-5 lg:grid-cols-3">
+      <div className="lg:col-span-2">
+        <div className="micro mb-2 text-muted">Its buyers ({d.buyers.length}) · not yet yours: {d.not_our_buyers.length}</div>
+        <ul className="space-y-1 text-[12.5px]">
+          {d.buyers.slice(0, 10).map((b) => (
+            <li key={b.id} className="flex justify-between gap-3">
+              <span className="truncate">{b.name} {!b.ours && <Badge tone="teal">prospect</Badge>}</span>
+              <span className="num text-muted">{b.shipments} · {num(Math.round(b.weight_kg))} kg · last {date(b.last)}</span>
+            </li>
+          ))}
+        </ul>
+        {!d.client_shippers_configured && <p className="mt-2 text-[11.5px] text-amber-800">Client shipper names are not configured, so every buyer counts as "not yet yours".</p>}
+      </div>
+      <div>
+        <div className="micro mb-2 text-muted">Volume by quarter (kg)</div>
+        <ul className="space-y-0.5 text-[12px]">{Object.entries(d.by_quarter).slice(-8).map(([q, v]) => <li key={q} className="flex justify-between"><span>{q}</span><span className="num">{num(Math.round(v))}</span></li>)}</ul>
+        <div className="micro mt-3 mb-2 text-muted">Markets</div>
+        <div className="flex flex-wrap gap-1">{Object.keys(d.by_market).slice(0, 8).map((m) => <CountryChip key={m} iso3={m} />)}</div>
+      </div>
+    </div>
+  )
+}
+
+function Aliases({ c }: { c: Company }) {
+  const qc = useQueryClient()
+  const [v, setV] = useState(c.aliases.join(', '))
+  const save = useMutation({
+    mutationFn: () => put(`/api/companies/${c.id}/aliases`, { aliases: v.split(',').map((x) => x.trim()).filter(Boolean) }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['accounts'] }); toast.success('Aliases saved') },
+  })
+  return (
+    <form className="flex flex-wrap items-end gap-2 border-t border-line-soft px-5 py-3" onSubmit={(e) => { e.preventDefault(); save.mutate() }}>
+      <Field label="Aliases used to match shipment records (exact names, comma separated)">
+        <Input className="w-[min(560px,80vw)]" value={v} onChange={(e) => setV(e.target.value)} />
+      </Field>
+      <Button type="submit" size="sm" variant="secondary" loading={save.isPending}>Save aliases</Button>
+    </form>
+  )
+}
+
+function AccountExtras({ c }: { c: Company }) {
+  const { can } = useAuth()
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="border-t border-line">
+      <button type="button" onClick={() => setOpen((o) => !o)} className="flex w-full items-center justify-between px-5 py-3 text-left text-[13px] font-medium text-ink-900 hover:bg-paper" aria-expanded={open}>
+        <span className="flex items-center gap-2"><Tags className="size-4 text-brand-700" />{c.relationship_type === 'retailer' ? 'Path to retailer, requirements and account brief' : 'Competitor tracker and account brief'}</span>
+        <span className="text-muted">{open ? 'Hide' : 'Show'}</span>
+      </button>
+      {open && (
+        <>
+          {c.relationship_type === 'retailer' ? <RetailerPathPanel id={c.id} /> : <CompetitorPanel id={c.id} />}
+          {can('admin') && <Aliases c={c} />}
+          <div className="border-t border-line-soft p-5"><AccountBrief companyId={c.id} hasBrief={c.has_brief} /></div>
+        </>
+      )}
+    </div>
+  )
+}
 
 function AccountCard({ c, users }: { c: Company; users: User[] | undefined }) {
   const { can, user } = useAuth()
@@ -51,6 +190,7 @@ function AccountCard({ c, users }: { c: Company; users: User[] | undefined }) {
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
               <h3 className="text-[19px] font-semibold text-ink-900">{c.name}</h3>
+              {c.aliases.length > 0 && <div className="mt-0.5 text-[12px] text-muted">Also known as: {c.aliases.join(' · ')}</div>}
               <div className="mt-1 flex flex-wrap items-center gap-2 text-[12.5px] text-muted">
                 <CountryChip iso3={c.country_iso3} />
                 {c.website ? (
@@ -170,6 +310,7 @@ function AccountCard({ c, users }: { c: Company; users: User[] | undefined }) {
           )}
         </form>
       </div>
+      <AccountExtras c={c} />
     </Card>
   )
 }

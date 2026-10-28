@@ -8,7 +8,7 @@ import { api, post } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { dateTime, usd } from '../lib/format'
 import { useReveal } from '../lib/motion'
-import type { ExploreResult, Product, Region } from '../lib/types'
+import type { ExploreResult, MonthlyResult, Product, Region } from '../lib/types'
 
 type Countries = { iso3: string; name: string }[]
 const THIS_YEAR = new Date().getFullYear()
@@ -16,6 +16,73 @@ const THIS_YEAR = new Date().getFullYear()
 function csvCell(v: unknown) {
   const s = v === null || v === undefined ? '' : String(v)
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+}
+
+const OWN_ORIGINS = ['EGY', 'JOR', 'SYR']
+
+function MonthlyPanel({ hs }: { hs: string }) {
+  const [reporter, setReporter] = useState('USA')
+  const m = useQuery({
+    queryKey: ['monthly', hs, reporter],
+    queryFn: () => api<MonthlyResult>(`/api/markets/${hs}/monthly?reporter=${reporter}`),
+    enabled: reporter.length === 3,
+  })
+  const rows = m.data?.rows ?? []
+  const periods = [...new Set(rows.map((r) => r.period))].sort().slice(-12)
+  const partners = new Map<string, { name: string; iso: string; values: Record<string, number | null>; kg: number }>()
+  for (const r of rows) {
+    if (!periods.includes(r.period)) continue
+    const key = r.partner_iso3 || r.partner_name
+    const p = partners.get(key) ?? { name: r.partner_name, iso: r.partner_iso3, values: {}, kg: 0 }
+    p.values[r.period] = (p.values[r.period] ?? 0) + (r.value_usd ?? 0)
+    p.kg += r.net_weight_kg ?? 0
+    partners.set(key, p)
+  }
+  const last = periods[periods.length - 1]
+  const list = [...partners.values()].sort((a, b) => (b.values[last] ?? 0) - (a.values[last] ?? 0))
+  const top = [...list.filter((p) => p.iso === 'WLD' || p.iso === 'XEU'), ...list.filter((p) => !['WLD', 'XEU'].includes(p.iso)).slice(0, 10), ...list.filter((p) => OWN_ORIGINS.includes(p.iso) && list.indexOf(p) > 12)]
+  const sources = [...new Set(rows.map((r) => r.source))]
+  return (
+    <Card>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line-soft px-5 py-4">
+        <div>
+          <h2 className="text-[15.5px] font-semibold">Monthly imports by origin</h2>
+          <p className="text-[12.5px] text-muted">US Census (USA) or Eurostat Comext (EU members). Values in USD; EUR converted at the ECB monthly average.</p>
+        </div>
+        <Input className="w-24 font-mono uppercase" maxLength={3} value={reporter} onChange={(e) => setReporter(e.target.value.toUpperCase())} aria-label="Reporter" />
+      </div>
+      {m.isLoading ? <Skeleton className="m-5 h-40" /> : rows.length === 0 ? (
+        <p className="px-5 py-6 text-[13px] text-muted">No monthly data from US Census or Eurostat for HS {hs} and {reporter}. An administrator can load it in Data admin → Connectors.</p>
+      ) : (
+        <>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-[12.5px]">
+              <thead>
+                <tr>
+                  <th className="micro sticky left-0 border-b border-line bg-paper px-4 py-2.5 font-medium text-muted">Origin</th>
+                  {periods.map((p) => <th key={p} className="micro border-b border-line bg-paper px-3 py-2.5 text-right font-medium text-muted">{p}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {top.map((p) => (
+                  <tr key={p.iso || p.name} className={OWN_ORIGINS.includes(p.iso) ? 'bg-brand-50/60' : ''}>
+                    <td className="sticky left-0 border-b border-line-soft bg-inherit px-4 py-2 font-medium text-ink-900">
+                      {p.iso === 'WLD' ? 'All origins' : p.iso === 'XEU' ? 'Outside the EU' : p.name} {OWN_ORIGINS.includes(p.iso) && <Badge tone="teal">your origin</Badge>}
+                    </td>
+                    {periods.map((per) => <td key={per} className="num border-b border-line-soft px-3 py-2 text-right">{p.values[per] === undefined ? <span className="text-muted/60">—</span> : usd(p.values[per])}</td>)}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 border-t border-line-soft px-5 py-3 text-[11.5px] text-muted">
+            <span>Sources: {sources.join(', ')} (official)</span>
+            {(m.data?.sources ?? []).slice(0, 3).map((src) => <span key={src.id}><SourceLink source={src} compact /> {dateTime(src.retrieved_at)}</span>)}
+          </div>
+        </>
+      )}
+    </Card>
+  )
 }
 
 export default function Explorer() {
@@ -106,7 +173,7 @@ export default function Explorer() {
         actions={
           <>
             <Button variant="secondary" icon={<Download />} onClick={exportCsv} disabled={!d?.series.length}>Export CSV</Button>
-            {can('analyst') && (
+            {can('admin') && (
               <Button icon={<CloudDownload />} loading={live.isPending} onClick={() => live.mutate()} disabled={!code || badYears}>
                 Fetch from UN Comtrade
               </Button>
@@ -164,7 +231,7 @@ export default function Explorer() {
       ) : !d || d.series.length === 0 ? (
         <Card>
           <EmptyState icon={<LineIcon />} title="No stored figures for this selection">
-            {can('analyst') ? 'Fetch this slice from UN Comtrade. Identical requests come from the cache and are not repeated.' : 'Ask an analyst to load this product’s trade data.'}
+            {can('admin') ? 'Fetch this slice from UN Comtrade. Identical requests come from the cache and are not repeated.' : 'Ask an administrator to load this product’s trade data.'}
           </EmptyState>
         </Card>
       ) : (
@@ -237,6 +304,7 @@ export default function Explorer() {
             </ul>
             <p className="mt-3 text-[12px] text-muted">{d.licence}</p>
           </Card>
+          <MonthlyPanel hs={d.hs_code} />
         </div>
       )}
     </div>

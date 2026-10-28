@@ -24,6 +24,7 @@ DEFAULTS: dict = {
     },
     "priority_categories": [],
     "regions": {},  # region name -> ISO3 members
+    "region_notes": {},  # region name -> caveat shown in the app (e.g. membership unconfirmed)
     "private_label_weights": {
         "market_size": 30,
         "growth": 20,

@@ -37,6 +37,7 @@ class HsStatus(StrEnum):
     candidate = "candidate"  # needs verification by the client or a customs broker
     insufficient_info = "insufficient_info"
     unmapped = "unmapped"
+    discrepancy = "discrepancy"  # the client's code points to a different product family; needs review
 
 
 class ReviewStatus(StrEnum):
@@ -57,6 +58,7 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255))
     role: Mapped[str] = mapped_column(String(20), default=Role.viewer)
     is_active: Mapped[bool] = mapped_column(default=True)
+    language: Mapped[str] = mapped_column(String(2), default="en", server_default="en")
     created_at: Mapped[datetime] = _now()
 
 
@@ -212,6 +214,8 @@ class Company(Base):
     # confirmed: official identity verified from the company's own sources; needs_confirmation: named by
     # the client or a source but not yet matched to a legal entity
     identity_status: Mapped[str] = mapped_column(String(20), default="unverified", server_default="unverified")
+    aliases: Mapped[list[str]] = mapped_column(ARRAY(Text), default=list, server_default="{}")
+    normalized_name: Mapped[str] = mapped_column(Text, default="", server_default="", index=True)
     vendor_url: Mapped[str] = mapped_column(Text, default="", server_default="")
     owner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     next_action: Mapped[str] = mapped_column(Text, default="", server_default="")
@@ -233,19 +237,157 @@ class CompanyEvidence(Base):
     source: Mapped[SourceRecord] = relationship(lazy="joined")
 
 
+class ImportBatch(Base):
+    """One uploaded shipment file (bill-of-lading export from a licensed provider)."""
+
+    __tablename__ = "import_batches"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    provider: Mapped[str] = mapped_column(String(40))
+    filename: Mapped[str] = mapped_column(String(255))
+    file_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    row_count: Mapped[int] = mapped_column(Integer, default=0)
+    inserted: Mapped[int] = mapped_column(Integer, default=0)
+    duplicates: Mapped[int] = mapped_column(Integer, default=0)
+    errors: Mapped[list] = mapped_column(JSONB, default=list)
+    mapping: Mapped[dict] = mapped_column(JSONB, default=dict)
+    status: Mapped[str] = mapped_column(String(20), default="completed")
+    uploaded_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = _now()
+
+
 class Shipment(Base):
-    """Company-level shipment record; only populated from a licensed provider."""
+    """One bill-of-lading record from a licensed provider file. Shown only to signed-in users of this org."""
 
     __tablename__ = "shipments"
+    __table_args__ = (UniqueConstraint("provider", "row_key"),)
     id: Mapped[int] = mapped_column(primary_key=True)
-    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"))
-    hs_code: Mapped[str] = mapped_column(String(10))
-    shipped_on: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    origin_iso3: Mapped[str] = mapped_column(String(3))
-    destination_iso3: Mapped[str] = mapped_column(String(3))
+    provider: Mapped[str] = mapped_column(String(40))
+    row_key: Mapped[str] = mapped_column(String(80))  # provider record id, or a hash of the row
+    shipped_on: Mapped[date] = mapped_column(Date, index=True)
+    shipper_company_id: Mapped[int | None] = mapped_column(
+        ForeignKey("companies.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    consignee_company_id: Mapped[int | None] = mapped_column(
+        ForeignKey("companies.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    shipper_name: Mapped[str] = mapped_column(Text, default="")
+    consignee_name: Mapped[str] = mapped_column(Text, default="")
+    origin_iso3: Mapped[str] = mapped_column(String(3), default="")
+    destination_iso3: Mapped[str] = mapped_column(String(3), default="", index=True)
+    hs_code: Mapped[str] = mapped_column(String(12), default="", index=True)  # as filed (6-10 digits)
+    hs6: Mapped[str] = mapped_column(String(6), default="", index=True)
+    product_description: Mapped[str] = mapped_column(Text, default="")
     weight_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    quantity: Mapped[float | None] = mapped_column(Float, nullable=True)
     value_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
+    port_of_lading: Mapped[str] = mapped_column(Text, default="")
+    port_of_unlading: Mapped[str] = mapped_column(Text, default="")
+    carrier: Mapped[str] = mapped_column(Text, default="")
+    import_batch_id: Mapped[int] = mapped_column(ForeignKey("import_batches.id", ondelete="CASCADE"), index=True)
+
+
+class MonthlyFlow(Base):
+    """Monthly trade from national/regional sources (US Census, Eurostat Comext)."""
+
+    __tablename__ = "monthly_flows"
+    __table_args__ = (
+        UniqueConstraint("source", "reporter_iso3", "partner_iso3", "partner_name", "product_code", "flow", "period"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source: Mapped[str] = mapped_column(String(20))  # census, comext
+    reporter_iso3: Mapped[str] = mapped_column(String(3), index=True)
+    partner_iso3: Mapped[str] = mapped_column(String(3))
+    partner_name: Mapped[str] = mapped_column(Text, default="")
+    hs6: Mapped[str] = mapped_column(String(6), index=True)
+    product_code: Mapped[str] = mapped_column(String(12))  # HS10 (Census) / CN8 (Comext) / HS6
+    flow: Mapped[str] = mapped_column(String(1), default="M")
+    period: Mapped[str] = mapped_column(String(7))  # YYYY-MM
+    value_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
+    value_native: Mapped[float | None] = mapped_column(Float, nullable=True)
+    currency: Mapped[str] = mapped_column(String(3), default="USD")
+    fx_rate: Mapped[float | None] = mapped_column(Float, nullable=True)  # native -> USD, monthly average
+    net_weight_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    quantity: Mapped[float | None] = mapped_column(Float, nullable=True)
+    unit: Mapped[str] = mapped_column(String(20), default="")
     source_record_id: Mapped[int] = mapped_column(ForeignKey("source_records.id"))
+
+
+class FxRate(Base):
+    __tablename__ = "fx_rates"
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    base: Mapped[str] = mapped_column(String(3), primary_key=True)
+    quote: Mapped[str] = mapped_column(String(3), primary_key=True)
+    rate: Mapped[float] = mapped_column(Float)
+    source: Mapped[str] = mapped_column(String(40), default="frankfurter (ECB)")
+
+
+class Tariff(Base):
+    """Duty rate for an importer x HS x origin. Connector rows and admin overrides; overrides win."""
+
+    __tablename__ = "tariffs"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    importer_iso3: Mapped[str] = mapped_column(String(3), index=True)  # EU members use EUN
+    hs_code: Mapped[str] = mapped_column(String(10), index=True)
+    origin_iso3: Mapped[str] = mapped_column(String(3), default="")  # "" = applies to any origin (MFN)
+    rate_type: Mapped[str] = mapped_column(String(15))  # MFN, preferential, additional
+    ad_valorem_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    specific_rate: Mapped[str] = mapped_column(Text, default="")
+    agreement: Mapped[str] = mapped_column(Text, default="")
+    data_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    effective_from: Mapped[date | None] = mapped_column(Date, nullable=True)
+    effective_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+    source: Mapped[str] = mapped_column(String(20))  # wits, usitc, override
+    source_url: Mapped[str] = mapped_column(Text, default="")
+    source_record_id: Mapped[int | None] = mapped_column(ForeignKey("source_records.id"), nullable=True)
+    verified_at: Mapped[datetime] = _now()
+    notes: Mapped[str] = mapped_column(Text, default="")
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+
+
+class RetailerRequirement(Base):
+    """Supplier requirement for a target retailer or market; admin-maintained with its source."""
+
+    __tablename__ = "retailer_requirements"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int | None] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"), nullable=True)
+    market_iso3: Mapped[str] = mapped_column(String(3), default="")
+    title: Mapped[str] = mapped_column(Text)
+    detail: Mapped[str] = mapped_column(Text, default="")
+    source_url: Mapped[str] = mapped_column(Text, default="")
+    verified_at: Mapped[date | None] = mapped_column(Date, nullable=True)
+    status: Mapped[str] = mapped_column(String(12), default="todo")  # todo, in_progress, met, not_applicable
+    created_at: Mapped[datetime] = _now()
+
+
+class Alert(Base):
+    __tablename__ = "alerts"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    type: Mapped[str] = mapped_column(String(30), index=True)
+    company_id: Mapped[int | None] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"), nullable=True)
+    hs_code: Mapped[str] = mapped_column(String(12), default="")
+    title: Mapped[str] = mapped_column(Text)
+    payload: Mapped[dict] = mapped_column(JSONB, default=dict)
+    dedupe_key: Mapped[str] = mapped_column(String(160), unique=True)
+    created_at: Mapped[datetime] = _now()
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class Brief(Base):
+    """Every generated account brief, with the facts it was given and the model/prompt version."""
+
+    __tablename__ = "briefs"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"), index=True)
+    language: Mapped[str] = mapped_column(String(2), default="en")
+    content: Mapped[dict] = mapped_column(JSONB)
+    facts_bundle: Mapped[list] = mapped_column(JSONB)
+    model: Mapped[str] = mapped_column(String(60))
+    prompt_version: Mapped[str] = mapped_column(String(60))
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cost_usd: Mapped[float] = mapped_column(Float, default=0)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = _now()
 
 
 class LogisticsQuote(Base):
@@ -254,6 +396,8 @@ class LogisticsQuote(Base):
     __tablename__ = "logistics_quotes"
     id: Mapped[int] = mapped_column(primary_key=True)
     origin: Mapped[str] = mapped_column(String(120))
+    origin_iso3: Mapped[str] = mapped_column(String(3), default="", server_default="")
+    payload_kg: Mapped[float | None] = mapped_column(Float, nullable=True)  # cargo per container, for $/kg
     destination: Mapped[str] = mapped_column(String(120))
     destination_iso3: Mapped[str] = mapped_column(String(3), index=True)
     mode: Mapped[str] = mapped_column(String(20))  # sea, air, road, rail

@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 
+from app import ratelimit
 from app.models import (
     ApiCache,
     Clarification,
@@ -214,7 +215,8 @@ def list_target_markets(_: CurrentUser, db: DB):
 
 
 @router.post("/target-markets/import")
-async def import_target_markets(file: UploadFile, user: Analyst, db: DB):
+async def import_target_markets(file: UploadFile, user: Admin, db: DB):
+    ratelimit.hit(f"upload:{user.id}", 10)
     """Import the client's country list. Columns: country (name or ISO3), segment (existing/expansion), notes."""
     data = await file.read(MAX_UPLOAD + 1)
     if len(data) > MAX_UPLOAD:
@@ -276,7 +278,7 @@ class TargetMarketIn(BaseModel):
 
 
 @router.put("/target-markets/{iso3}")
-def put_target_market(iso3: str, body: TargetMarketIn, user: Analyst, db: DB):
+def put_target_market(iso3: str, body: TargetMarketIn, user: Admin, db: DB):
     iso3 = iso3.upper()
     names, _l = country_index(db)
     if iso3 not in names:
@@ -290,7 +292,7 @@ def put_target_market(iso3: str, body: TargetMarketIn, user: Analyst, db: DB):
 
 
 @router.delete("/target-markets/{iso3}", status_code=204)
-def delete_target_market(iso3: str, user: Analyst, db: DB):
+def delete_target_market(iso3: str, user: Admin, db: DB):
     m = db.get(TargetMarket, iso3.upper())
     if not m:
         raise HTTPException(404, "Not in the market list.")
@@ -302,8 +304,9 @@ def delete_target_market(iso3: str, user: Analyst, db: DB):
 @router.get("/regions")
 def get_regions(_: CurrentUser, db: DB):
     names, _l = country_index(db)
+    notes = settings.get(db, "region_notes")
     return [
-        {"name": r, "members": [{"iso3": i, "name": names.get(i, i)} for i in members]}
+        {"name": r, "note": notes.get(r, ""), "members": [{"iso3": i, "name": names.get(i, i)} for i in members]}
         for r, members in settings.get(db, "regions").items()
     ]
 

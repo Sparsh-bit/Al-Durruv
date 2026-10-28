@@ -5,6 +5,8 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import { toast } from 'sonner'
 import { ShareBars, TrendLines, YearBars } from '../components/charts'
+
+const OWN_ORIGINS = ['EGY', 'JOR', 'SYR']
 import {
   Badge,
   Button,
@@ -56,12 +58,12 @@ function RefreshPanel({ hs, run, onStarted }: { hs: string; run: Run | null | un
               </div>
               <div className="mt-2 text-xs text-muted">{run?.message} · {run?.rows ?? 0} records</div>
             </div>
-          ) : can('analyst') ? (
+          ) : can('admin') ? (
             <Button icon={<Database className="size-4" />} loading={start.isPending} onClick={() => start.mutate()}>
               Load UN Comtrade data
             </Button>
           ) : (
-            <span className="text-sm text-muted">Ask an analyst to load data for this product.</span>
+            <span className="text-sm text-muted">Ask an administrator to load data for this product.</span>
           )
         }
       >
@@ -191,7 +193,20 @@ function CountryDrawer({ hs, m49, product, onClose }: { hs: string; m49: number 
             />
             <div className="p-3">
               {d.supplier_data_available ? (
-                <ShareBars rows={d.suppliers.slice(0, 10).map((s) => ({ key: s.m49, label: s.name, chip: s.iso3, value: s.value_usd, share: s.share }))} />
+                <>
+                <ShareBars
+                  rows={[...d.suppliers.slice(0, 10), ...d.suppliers.slice(10).filter((s) => OWN_ORIGINS.includes(s.iso3))].map((s) => ({
+                    key: s.m49,
+                    label: s.name,
+                    chip: s.iso3,
+                    value: s.value_usd,
+                    share: s.share,
+                    highlight: OWN_ORIGINS.includes(s.iso3),
+                    extra: s.unit_value ? `$${s.unit_value.toFixed(2)}/kg` : undefined,
+                  }))}
+                />
+                <p className="mt-2 text-[11.5px] text-muted">$/kg = value ÷ net weight; origins without a reported weight show no unit value. Egypt, Jordan and Syria are highlighted.</p>
+                </>
               ) : (
                 <div className="p-3"><Notice>Supplier breakdown is loaded for the 15 largest markets only. This market is outside that set.</Notice></div>
               )}
@@ -417,7 +432,7 @@ function Dashboard({ ov, product, onRefresh, refreshing }: { ov: Extract<Overvie
         <span>
           Source: <SourceLink source={src} /> · {ov.note} Retrieved {date(src.retrieved_at)}.
         </span>
-        {can('analyst') && (
+        {can('admin') && (
           <Button size="sm" variant="ghost" icon={<RefreshCw className="size-3.5" />} loading={refreshing} onClick={onRefresh}>
             {refreshing ? 'Refreshing…' : `Refresh data${ov.refresh?.finished_at ? ` (last ${dateTime(ov.refresh.finished_at)})` : ''}`}
           </Button>

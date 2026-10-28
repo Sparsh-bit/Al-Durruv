@@ -101,7 +101,7 @@ export function TrendLines({ series, height = 260, gaps = false }: { series: { n
 
 /** Horizontal share bars rendered in HTML: crisp labels, fully accessible, no legend needed. */
 export function ShareBars({ rows, onSelect }: {
-  rows: { key: string | number; label: string; chip?: string; value: number; share: number | null; hint?: string }[]
+  rows: { key: string | number; label: string; chip?: string; value: number; share: number | null; hint?: string; highlight?: boolean; extra?: string }[]
   onSelect?: (key: string | number) => void
 }) {
   const max = Math.max(...rows.map((r) => r.value), 1)
@@ -114,13 +114,14 @@ export function ShareBars({ rows, onSelect }: {
               <span className="flex min-w-0 items-center gap-2">
                 {r.chip && <span className="inline-flex h-5 min-w-9 items-center justify-center rounded bg-slate-100 px-1 font-mono text-[10.5px] font-semibold text-slate-600">{r.chip}</span>}
                 <span className="truncate font-medium text-slate-800">{r.label}</span>
+                {r.highlight && <span className="rounded-[5px] bg-brand-50 px-1.5 py-px text-[10.5px] font-medium text-brand-700 ring-1 ring-brand-200">your origin</span>}
               </span>
               <span className="tabular shrink-0 text-slate-700">
-                {usd(r.value)} <span className="text-muted">· {r.share === null ? '—' : `${(r.share * 100).toFixed(1)}%`}</span>
+                {usd(r.value)} <span className="text-muted">· {r.share === null ? '—' : `${(r.share * 100).toFixed(1)}%`}{r.extra ? ` · ${r.extra}` : ''}</span>
               </span>
             </div>
             <div className="mt-1.5 h-1.5 rounded-full bg-slate-100">
-              <div className="h-1.5 rounded-full bg-brand-700" style={{ width: `${Math.max(1.5, (r.value / max) * 100)}%` }} />
+              <div className={`h-1.5 rounded-full ${r.highlight ? 'bg-brand-500' : 'bg-ink-800'}`} style={{ width: `${Math.max(1.5, (r.value / max) * 100)}%` }} />
             </div>
           </>
         )

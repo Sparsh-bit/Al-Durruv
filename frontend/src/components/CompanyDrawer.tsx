@@ -1,14 +1,13 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Copy, ExternalLink, Mail, MapPin, Phone, Sparkles } from 'lucide-react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { ExternalLink, Mail, MapPin, Phone } from 'lucide-react'
 import { useState } from 'react'
-import { toast } from 'sonner'
-import { ApiError, api, patch, post } from '../lib/api'
+import { patch } from '../lib/api'
 import { useAuth } from '../lib/auth'
-import { date, dateTime } from '../lib/format'
+import { date } from '../lib/format'
 import { PL_META, RELATIONSHIP_LABEL, STAGES } from '../lib/labels'
-import type { Company, CompanyBrief, Relationship, Stage } from '../lib/types'
-import { EvidenceList, StatementList } from './Statements'
-import { Badge, Button, Card, CountryChip, Drawer, Notice, Select, SourceLink, Spinner, Textarea } from './ui'
+import type { Company, Relationship, Stage } from '../lib/types'
+import AccountBrief from './AccountBrief'
+import { Badge, Button, Card, CountryChip, Drawer, Select, SourceLink, Textarea } from './ui'
 
 export function ScoreBreakdown({ c }: { c: Company }) {
   if (c.prospect_score === null) return null
@@ -32,83 +31,6 @@ function Section({ title, children }: { title: string; children: React.ReactNode
     <Card className="p-4">
       <div className="mb-2 text-xs font-semibold tracking-wider text-muted uppercase">{title}</div>
       {children}
-    </Card>
-  )
-}
-
-function BriefPanel({ company }: { company: Company }) {
-  const { can } = useAuth()
-  const qc = useQueryClient()
-  const brief = useQuery({
-    queryKey: ['company-brief', company.id],
-    queryFn: () => api<CompanyBrief>(`/api/companies/${company.id}/brief`),
-    enabled: company.has_brief,
-    retry: false,
-  })
-  const generate = useMutation({
-    mutationFn: () => post<CompanyBrief>(`/api/companies/${company.id}/brief`),
-    onSuccess: (b) => {
-      qc.setQueryData(['company-brief', company.id], b)
-      qc.invalidateQueries({ queryKey: ['companies'] })
-      toast.success(`Brief ready (cost $${b.cost_usd.toFixed(4)})`)
-    },
-  })
-  const b = generate.data ?? brief.data
-  const copy = async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text)
-      toast.success('Copied to clipboard')
-    } catch {
-      toast.error('Copy failed: select the text and copy it manually.')
-    }
-  }
-  return (
-    <Card className="overflow-hidden">
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-gradient-to-r from-ink-900 to-ink-800 px-4 py-3 text-white">
-        <div className="flex items-center gap-2 text-sm font-semibold"><Sparkles className="size-4 text-brand-200" /> AI company brief</div>
-        {can('analyst') && (
-          <Button size="sm" variant="secondary" loading={generate.isPending} onClick={() => generate.mutate()}>
-            {b ? 'Regenerate' : 'Generate brief'}
-          </Button>
-        )}
-      </div>
-      <div className="p-4">
-        {generate.isPending ? (
-          <div className="flex items-center gap-3 py-6 text-sm text-muted"><Spinner className="size-4" /> Writing the brief from the evidence…</div>
-        ) : b ? (
-          <div className="space-y-5">
-            <p className="text-xs text-muted">Generated {dateTime(b.generated_at)} · {b.model} · ${b.cost_usd.toFixed(4)}</p>
-            {b.sections.map((s) => (
-              <section key={s.title}>
-                <h4 className="mb-2 text-sm font-semibold text-ink-900">{s.title}</h4>
-                <StatementList statements={s.statements} evidence={b.evidence} />
-              </section>
-            ))}
-            <section className="rounded-lg border border-line bg-slate-50/70 p-3">
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <h4 className="flex items-center gap-2 text-sm font-semibold text-ink-900"><Mail className="size-4" /> Draft first-contact email</h4>
-                <Button size="sm" variant="ghost" icon={<Copy className="size-3.5" />} onClick={() => copy(`Subject: ${b.outreach_email.subject}\n\n${b.outreach_email.body}`)}>
-                  Copy
-                </Button>
-              </div>
-              {b.outreach_email.warnings.map((w) => <div key={w} className="mb-2"><Notice tone="warn">{w}</Notice></div>)}
-              <div className="text-sm font-medium text-slate-800">Subject: {b.outreach_email.subject}</div>
-              <p className="mt-2 text-sm whitespace-pre-line text-slate-700">{b.outreach_email.body}</p>
-              <p className="mt-2 text-[11px] text-muted">Draft only. Nothing is sent from the platform; review before use.</p>
-            </section>
-            <details className="rounded-lg border border-line px-3 py-2">
-              <summary className="cursor-pointer text-xs font-medium text-slate-600">Evidence used ({b.evidence.length})</summary>
-              <div className="mt-2"><EvidenceList evidence={b.evidence} /></div>
-            </details>
-          </div>
-        ) : brief.isError && !(brief.error instanceof ApiError && brief.error.status === 404) ? (
-          <Notice tone="error">{brief.error.message}</Notice>
-        ) : (
-          <p className="text-sm text-muted">
-            A pre-meeting brief: company overview, fit with your products and private-label offer, what is known and unknown about purchasing, market context, negotiation approach and a draft first email. Each statement is labelled and cited.
-          </p>
-        )}
-      </div>
     </Card>
   )
 }
@@ -218,7 +140,7 @@ export default function CompanyDrawer({ company, onClose }: { company: Company |
             )}
           </Section>
 
-          <BriefPanel key={c.id} company={c} />
+          <AccountBrief key={c.id} companyId={c.id} hasBrief={c.has_brief} />
 
           <Section title="Evidence">
             <div className="space-y-2">

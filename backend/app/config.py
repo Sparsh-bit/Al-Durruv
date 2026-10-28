@@ -22,8 +22,16 @@ class Settings(BaseSettings):
     admin_password: str = ""
 
     anthropic_api_key: str = ""
-    claude_model: str = "claude-haiku-5-5"
+    claude_model: str = "claude-haiku-5-5"  # legacy fallback for both roles below
+    anthropic_model_brief: str = ""  # briefs and reports; brief suggests claude-sonnet-5-5 when budget allows
+    anthropic_model_fast: str = ""  # Q&A, research, classification
+    llm_daily_limit_per_user: int = 50
     research_max_searches: int = 5
+    feature_web_context: bool = True  # AI web research for companies and news (untrusted, cited)
+    feature_maersk_schedules: bool = False
+
+    census_api_key: str = ""
+    http_timeout_s: float = 60.0
 
     comtrade_subscription_key: str = ""
     comtrade_min_interval_s: float = 1.5
@@ -32,6 +40,14 @@ class Settings(BaseSettings):
 
     # ISO3 of the exporter's own country; enables "your country's share" in rankings.
     home_country_iso3: str = ""
+
+    @property
+    def model_brief(self) -> str:
+        return self.anthropic_model_brief or self.claude_model
+
+    @property
+    def model_fast(self) -> str:
+        return self.anthropic_model_fast or self.claude_model
 
     @field_validator("database_url", "database_url_unpooled")
     @classmethod

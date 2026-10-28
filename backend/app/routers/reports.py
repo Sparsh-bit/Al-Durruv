@@ -50,7 +50,7 @@ def generate(body: GenerateIn, user: Analyst, db: DB):
         raise HTTPException(409, "This product has no HS6 code yet. Map it in the catalogue first.")
     if not trade.overview(db, hs).get("has_data"):
         raise HTTPException(409, "Load trade statistics for this product before generating a brief.")
-    ai_usage.check_budget(db)
+    ai_usage.check_budget(db, user.id)
     evidence = build_context(db, hs)
     brief, usage = claude.write_brief(product.name, hs, evidence)
     usage["cost_usd"] = ai_usage.record(db, user.id, "market_brief", usage)

@@ -10,6 +10,8 @@ import type { Provider, Quote } from '../lib/types'
 
 const EMPTY = {
   origin: '',
+  origin_iso3: '',
+  payload_kg: '',
   destination: '',
   destination_iso3: '',
   mode: 'sea',
@@ -34,6 +36,7 @@ function QuoteForm({ onDone }: { onDone: () => void }) {
         ...f,
         destination_iso3: f.destination_iso3.toUpperCase(),
         cost_usd: f.cost_usd === '' ? null : Number(f.cost_usd),
+        payload_kg: f.payload_kg === '' ? null : Number(f.payload_kg),
         transit_days: f.transit_days === '' ? null : Number(f.transit_days),
         valid_until: f.valid_until ? new Date(f.valid_until).toISOString() : null,
       }),
@@ -51,7 +54,8 @@ function QuoteForm({ onDone }: { onDone: () => void }) {
     <form onSubmit={submit} className="space-y-4">
       <Notice>Enter only quotes you actually received (from a forwarder, carrier or platform). They are labelled <b>Client-provided</b> everywhere.</Notice>
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Origin (port or city)"><Input required minLength={2} value={f.origin} onChange={set('origin')} placeholder="e.g. Jebel Ali" /></Field>
+        <Field label="Origin (port or city)"><Input required minLength={2} value={f.origin} onChange={set('origin')} placeholder="e.g. Alexandria" /></Field>
+        <Field label="Factory country (ISO3)" hint="EGY, JOR or SYR: used for landed cost"><Input maxLength={3} pattern="[A-Za-z]{3}" value={f.origin_iso3} onChange={set('origin_iso3')} className="font-mono uppercase" /></Field>
         <Field label="Destination (port or city)"><Input required minLength={2} value={f.destination} onChange={set('destination')} placeholder="e.g. Felixstowe" /></Field>
         <Field label="Destination country (ISO3)"><Input required minLength={3} maxLength={3} value={f.destination_iso3} onChange={set('destination_iso3')} placeholder="GBR" /></Field>
         <Field label="Mode">
@@ -67,6 +71,7 @@ function QuoteForm({ onDone }: { onDone: () => void }) {
           </Select>
         </Field>
         <Field label="Cost (USD)"><Input type="number" min={0} step="0.01" value={f.cost_usd} onChange={set('cost_usd')} /></Field>
+        <Field label="Cargo per container (kg)" hint="Gives freight per kg"><Input type="number" min={1} step="1" value={f.payload_kg} onChange={set('payload_kg')} /></Field>
         <Field label="Transit time (days)"><Input type="number" min={0} max={365} value={f.transit_days} onChange={set('transit_days')} /></Field>
         <Field label="Valid until"><Input type="date" value={f.valid_until} onChange={set('valid_until')} /></Field>
       </div>
@@ -137,7 +142,7 @@ export default function Logistics() {
       <PageHeader
         title="Logistics"
         subtitle="Freight rates and transit times. Nothing here is estimated by AI: values come from a connected provider or are entered by your team with their source."
-        actions={can('analyst') && <Button icon={<Plus className="size-4" />} onClick={() => setOpen(true)}>Add quote</Button>}
+        actions={can('admin') && <Button icon={<Plus className="size-4" />} onClick={() => setOpen(true)}>Add quote</Button>}
       />
       <div className="mb-6 grid gap-4 md:grid-cols-2">
         {data.data?.providers.map((p) => (
@@ -181,7 +186,7 @@ export default function Logistics() {
                   </td>
                   <td className={`${td} text-muted`}>{date(q.valid_until)}</td>
                   <td className={`${td} text-right`}>
-                    {can('analyst') && <Button size="sm" variant="ghost" aria-label="Delete quote" loading={remove.isPending && remove.variables === q.id} onClick={() => remove.mutate(q.id)}><Trash2 className="size-4" /></Button>}
+                    {can('admin') && <Button size="sm" variant="ghost" aria-label="Delete quote" loading={remove.isPending && remove.variables === q.id} onClick={() => remove.mutate(q.id)}><Trash2 className="size-4" /></Button>}
                   </td>
                 </tr>
               ))}

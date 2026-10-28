@@ -11,7 +11,10 @@ from sqlalchemy import any_, select
 from app.ai import claude, usage
 from app.ai.grounding import build_company_context, extract_numbers, validate_statements
 from app.config import get_settings
+from app.exports import safe_df
+from app.models import Brief as BriefRecord
 from app.models import Company, Country, HSCode, ProspectList, ProspectListItem, RefreshRun, ReviewStatus, User
+from app.reports import render_company_brief_pdf
 from app.routers.markets import _run_out
 from app.security import DB, Analyst, CurrentUser
 from app.services import audit, jobs, research
@@ -44,6 +47,7 @@ def company_out(c: Company, countries: dict[str, str] | None = None) -> dict:
         "score_components": c.score_components or {},
         "pipeline_stage": c.pipeline_stage,
         "identity_status": c.identity_status,
+        "aliases": c.aliases or [],
         "vendor_url": c.vendor_url,
         "owner_id": c.owner_id,
         "next_action": c.next_action,
@@ -147,42 +151,127 @@ def get_brief(company_id: int, _: CurrentUser, db: DB):
     return c.brief
 
 
+class BriefIn(BaseModel):
+    language: Literal["en", "ar"] | None = None
+
+
+def _unsupported(brief, evidence) -> list[float]:
+    """Numbers in the brief that no cited/available evidence contains (statements, email, WhatsApp)."""
+    allowed = [v for e in evidence for v in e.values if v]
+    bad = []
+    for sec in brief.sections:
+        for st in validate_statements([x.model_dump() for x in sec.statements], evidence):
+            if st["label"] == "unverified":
+                bad += [
+                    float(i.split(":")[1].split(",")[0]) for i in st["issues"] if i.startswith("unsupported_number")
+                ]
+    for text in (brief.outreach_email.subject, brief.outreach_email.body, brief.whatsapp_message):
+        bad += [n for n in extract_numbers(text) if not any(abs(n - v) <= 0.02 * abs(v) for v in allowed)]
+    return bad
+
+
 @router.post("/companies/{company_id}/brief")
-def generate_brief(company_id: int, user: Analyst, db: DB):
+def generate_brief(company_id: int, user: Analyst, db: DB, body: BriefIn | None = None):
+    """Grounded account brief. A draft with numbers that are not in the facts bundle is retried once, then
+    rejected; nothing unverified is saved."""
     c = _get(db, company_id)
-    usage.check_budget(db)
+    language = (body.language if body and body.language else None) or user.language or "en"
+    usage.check_budget(db, user.id)
     evidence = build_company_context(db, c)
-    brief, use = claude.write_company_brief(c.name, evidence)
-    cost = usage.record(db, user.id, "company_brief", use)
+    feedback, total_cost, brief, use = "", 0.0, None, {}
+    for _attempt in range(2):
+        brief, use = claude.write_company_brief(c.name, evidence, language, feedback)
+        total_cost += usage.record(db, user.id, "company_brief", use)
+        db.commit()
+        bad = _unsupported(brief, evidence)
+        if not bad:
+            break
+        feedback = "it contained numbers not in the evidence: " + ", ".join(f"{n:g}" for n in bad[:10]) + "."
+    else:
+        audit.record(db, user, "generate_brief_rejected", "company", c.id, feedback)
+        db.commit()
+        raise HTTPException(
+            502, "The AI draft twice used numbers that are not in the evidence, so it was not saved. Try again later."
+        )
     sections = [
         {"title": s.title, "statements": validate_statements([x.model_dump() for x in s.statements], evidence)}
         for s in brief.sections
     ]
-    allowed = [v for e in evidence for v in e.values if v]
-    stray = [
-        n for n in extract_numbers(brief.outreach_email.body) if not any(abs(n - v) <= 0.02 * abs(v) for v in allowed)
-    ]
-    c.brief = {
+    content = {
         "company": c.name,
+        "language": language,
         "generated_at": datetime.now(UTC).isoformat(),
         "model": use.get("model"),
-        "cost_usd": cost,
+        "prompt_version": claude.COMPANY_BRIEF_PROMPT_VERSION,
+        "cost_usd": total_cost,
         "sections": sections,
-        "outreach_email": {
-            "subject": brief.outreach_email.subject,
-            "body": brief.outreach_email.body,
-            "warnings": ["The draft contains numbers that are not in the evidence; check them before sending."]
-            if stray
-            else [],
-        },
+        "outreach_email": {"subject": brief.outreach_email.subject, "body": brief.outreach_email.body, "warnings": []},
+        "whatsapp_message": brief.whatsapp_message,
         "evidence": [e.as_dict() for e in evidence],
     }
-    c.brief_generated_at = datetime.now(UTC)
+    c.brief, c.brief_generated_at = content, datetime.now(UTC)
+    db.add(
+        BriefRecord(
+            company_id=c.id,
+            language=language,
+            content=content,
+            facts_bundle=content["evidence"],
+            model=use.get("model", ""),
+            prompt_version=claude.COMPANY_BRIEF_PROMPT_VERSION,
+            input_tokens=use.get("input_tokens", 0),
+            output_tokens=use.get("output_tokens", 0),
+            cost_usd=total_cost,
+            created_by=user.id,
+        )
+    )
     if c.pipeline_stage == "identified":
         c.pipeline_stage = "researched"
-    audit.record(db, user, "generate_brief", "company", c.id, f"cost ${cost:.4f}")
+    audit.record(db, user, "generate_brief", "company", c.id, f"{language}, cost ${total_cost:.4f}")
     db.commit()
-    return c.brief
+    return content
+
+
+@router.get("/companies/{company_id}/briefs")
+def brief_history(company_id: int, _: CurrentUser, db: DB):
+    _get(db, company_id)
+    rows = db.scalars(
+        select(BriefRecord)
+        .where(BriefRecord.company_id == company_id)
+        .order_by(BriefRecord.created_at.desc())
+        .limit(20)
+    )
+    return [
+        {
+            "id": b.id,
+            "language": b.language,
+            "model": b.model,
+            "prompt_version": b.prompt_version,
+            "cost_usd": b.cost_usd,
+            "created_at": b.created_at.isoformat(),
+        }
+        for b in rows
+    ]
+
+
+@router.get("/companies/{company_id}/brief/pdf")
+def brief_pdf(company_id: int, user: CurrentUser, db: DB, brief_id: int | None = None):
+    c = _get(db, company_id)
+    content = c.brief
+    if brief_id:
+        b = db.get(BriefRecord, brief_id)
+        if not b or b.company_id != c.id:
+            raise HTTPException(404, "Brief not found.")
+        content = b.content
+    if not content:
+        raise HTTPException(404, "No brief has been generated for this company yet.")
+    audit.record(db, user, "export", "brief", c.id, content.get("language", "en"))
+    db.commit()
+    safe = "".join(ch if ch.isalnum() else "-" for ch in c.name).strip("-").lower() or "company"
+    return Response(
+        render_company_brief_pdf(content),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="brief-{safe}.pdf"'},
+    )
 
 
 class ResearchIn(BaseModel):
@@ -212,7 +301,7 @@ def start_research(body: ResearchIn, user: Analyst, db: DB, tasks: BackgroundTas
     recent = prev and datetime.now(UTC) - prev.started_at < timedelta(days=7)
     if prev and prev.status == "succeeded" and recent and not body.force:
         return _run_out(prev)  # cached: avoids paying for the same searches twice
-    usage.check_budget(db)
+    usage.check_budget(db, user.id)
     run = RefreshRun(adapter="web_research", scope=scope, started_by=user.id, status="queued", message="Queued")
     db.add(run)
     audit.record(db, user, "research", "company", "", scope)
@@ -267,7 +356,7 @@ def _csv(companies: list[Company], filename: str) -> Response:
             }
         )
     buf = io.StringIO()
-    pd.DataFrame(rows, columns=EXPORT_COLUMNS).to_csv(buf, index=False)
+    safe_df(pd.DataFrame(rows, columns=EXPORT_COLUMNS)).to_csv(buf, index=False)
     return Response(
         buf.getvalue().encode("utf-8-sig"),
         media_type="text/csv",
@@ -276,13 +365,16 @@ def _csv(companies: list[Company], filename: str) -> Response:
 
 
 @router.get("/companies/export")
-def export_companies(_: CurrentUser, db: DB, hs: str | None = None, relationship: Relationship | None = None):
+def export_companies(user: CurrentUser, db: DB, hs: str | None = None, relationship: Relationship | None = None):
     stmt = select(Company).order_by(Company.relationship_type, Company.prospect_score.desc().nulls_last(), Company.name)
     if hs:
         stmt = stmt.where(hs == any_(Company.hs_codes))
     if relationship:
         stmt = stmt.where(Company.relationship_type == relationship)
-    return _csv(list(db.scalars(stmt)), f"companies{'-' + relationship if relationship else ''}.csv")
+    rows = list(db.scalars(stmt))
+    audit.record(db, user, "export", "company", "", f"{len(rows)} rows ({relationship or 'all'})")
+    db.commit()
+    return _csv(rows, f"companies{'-' + relationship if relationship else ''}.csv")
 
 
 class ListIn(BaseModel):
@@ -327,11 +419,13 @@ def create_list(body: ListIn, user: Analyst, db: DB):
 
 
 @router.get("/prospect-lists/{list_id}/export")
-def export_list(list_id: int, _: CurrentUser, db: DB):
+def export_list(list_id: int, user: CurrentUser, db: DB):
     pl = db.get(ProspectList, list_id)
     if not pl:
         raise HTTPException(404, "List not found.")
     safe = "".join(ch if ch.isalnum() else "-" for ch in pl.name).strip("-").lower() or "list"
+    audit.record(db, user, "export", "prospect_list", list_id, pl.name)
+    db.commit()
     return _csv(_list_companies(db, list_id), f"prospects-{safe}.csv")
 
 

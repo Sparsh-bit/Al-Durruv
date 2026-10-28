@@ -77,6 +77,18 @@ class Email(BaseModel):
 class CompanyBrief(BaseModel):
     sections: list[BriefSection]
     outreach_email: Email
+    whatsapp_message: str
+
+
+COMPANY_BRIEF_PROMPT_VERSION = "company-brief-2026-10-28"
+LANGUAGE_RULES = {
+    "en": "Write in clear international business English.",
+    "ar": (
+        "Write every section title, statement, the email and the WhatsApp message in Modern Standard Arabic. "
+        "Keep company names, HS codes and ISO country codes in Latin script. Write every number with Western "
+        "digits (0-9) exactly as it appears in the evidence."
+    ),
+}
 
 
 BRIEF_SECTIONS = [
@@ -182,7 +194,7 @@ def answer_question(question: str, evidence: list[Evidence], history: list[dict]
         },
     ]
     resp = _client().messages.parse(
-        model=s.claude_model,
+        model=s.model_fast,
         max_tokens=8000,
         system=_system(evidence),
         messages=messages,
@@ -203,7 +215,7 @@ def write_brief(product: str, hs: str, evidence: list[Evidence]) -> tuple[Brief,
         "company purchase volumes)."
     )
     resp = _client().messages.parse(
-        model=s.claude_model,
+        model=s.model_brief,
         max_tokens=16000,
         system=_system(evidence),
         messages=[{"role": "user", "content": prompt}],
@@ -215,18 +227,30 @@ def write_brief(product: str, hs: str, evidence: list[Evidence]) -> tuple[Brief,
 
 
 @_api_errors
-def write_company_brief(company: str, evidence: list[Evidence]) -> tuple[CompanyBrief, dict]:
+def write_company_brief(
+    company: str, evidence: list[Evidence], language: str = "en", feedback: str = ""
+) -> tuple[CompanyBrief, dict]:
     s = get_settings()
     prompt = (
-        f"Prepare a pre-meeting brief on '{company}' for our sales team. Use exactly these sections in order: "
-        f"{'; '.join(COMPANY_BRIEF_SECTIONS)}. 1-5 statements per section. In 'Purchasing pattern and volumes' "
-        "state plainly what is unknown; never estimate volumes or spend without evidence. In 'Negotiation "
-        "approach' give practical arguments based on our products, the market data and the company's profile. "
-        "Then draft a short first-contact email (max 150 words) from our export sales team: specific to this "
-        "company, no numbers, no claims that are not in the evidence, no promises on price or delivery."
+        f"Prepare a pre-meeting brief on the company named in the evidence ({company!r}) for our private-label "
+        f"sales team. Use exactly these sections in order: {'; '.join(COMPANY_BRIEF_SECTIONS)}"
+        f"{' (translate the titles)' if language != 'en' else ''}. 1-5 statements per section. In 'Purchasing "
+        "pattern and volumes' use only shipment-record evidence; values derived from it are estimates and must be "
+        "labelled 'estimate'; say plainly what is unknown. In 'Fit with our products' name which of our catalogue "
+        "products match what they buy. In 'Negotiation approach' give practical arguments based on our products, "
+        "the market data and the company's profile, and name the main risks. "
+        "Then draft a short first-contact email (max 150 words) and a WhatsApp first message (max 60 words) from "
+        "our export sales team: specific to this company, no numbers, no claims that are not in the evidence, no "
+        "promises on price or delivery, and no statement that we have already been in contact. "
+        + LANGUAGE_RULES.get(language, LANGUAGE_RULES["en"])
+        + (
+            f" Your previous draft was rejected: {feedback} Use only numbers that appear in the evidence."
+            if feedback
+            else ""
+        )
     )
     resp = _client().messages.parse(
-        model=s.claude_model,
+        model=s.model_brief,
         max_tokens=12000,
         system=_system(evidence),
         messages=[{"role": "user", "content": prompt}],
@@ -304,7 +328,7 @@ def _web_search_run(prompt: str, max_searches: int, max_tokens: int) -> tuple[li
     usage: dict | None = None
     for _ in range(4):  # pause_turn continuations
         resp = client.messages.create(
-            model=s.claude_model, max_tokens=max_tokens, messages=messages, tools=tools, output_config={"effort": "low"}
+            model=s.model_fast, max_tokens=max_tokens, messages=messages, tools=tools, output_config={"effort": "low"}
         )
         usage = _usage(resp, usage)
         for block in resp.content:
@@ -321,7 +345,7 @@ def _web_search_run(prompt: str, max_searches: int, max_tokens: int) -> tuple[li
             _check_stop(resp)
             break
         messages = [messages[0], {"role": "assistant", "content": resp.content}]
-    return parse_json_array("\n".join(texts)), results, usage or {"model": s.claude_model}
+    return parse_json_array("\n".join(texts)), results, usage or {"model": s.model_fast}
 
 
 @_api_errors

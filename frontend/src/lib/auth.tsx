@@ -8,6 +8,7 @@ type AuthState = {
   loading: boolean
   login: (email: string, password: string) => Promise<void>
   logout: () => void
+  refresh: () => Promise<void>
   can: (role: Role) => boolean
 }
 
@@ -43,9 +44,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(res.user)
   }, [])
 
+  const refresh = useCallback(async () => {
+    setUser(await api<User>('/api/auth/me'))
+  }, [])
+
   const value = useMemo<AuthState>(
-    () => ({ user, loading, login, logout, can: (r) => Boolean(user && RANK[user.role] >= RANK[r]) }),
-    [user, loading, login, logout],
+    () => ({ user, loading, login, logout, refresh, can: (r) => Boolean(user && RANK[user.role] >= RANK[r]) }),
+    [user, loading, login, logout, refresh],
   )
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

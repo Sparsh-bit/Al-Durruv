@@ -287,5 +287,146 @@
     "retailer_presence": 20,
     "private_label_signal": 15,
     "evidence": 15
-  }
+  },
+  "patches": [
+    {
+      "id": "2026-10-28-build-brief",
+      "source": "Owner's build brief, section 9 (28 Oct 2026)",
+      "settings_merge": {
+        "regions": {
+          "GCC": [
+            "ARE",
+            "SAU",
+            "QAT",
+            "KWT",
+            "OMN",
+            "BHR"
+          ]
+        },
+        "region_notes": {
+          "Far East": "Country list to be confirmed by the client. Seeded placeholders: Japan, South Korea, China, Malaysia, Singapore, Australia (unconfirmed).",
+          "GCC": "Added for the Lulu Hypermarket target."
+        }
+      },
+      "settings_replace_region": {
+        "Far East": [
+          "JPN",
+          "KOR",
+          "CHN",
+          "MYS",
+          "SGP",
+          "AUS"
+        ]
+      },
+      "settings_set_if_missing": {
+        "client_shipper_aliases": [
+          "Bertaya Food Industries",
+          "Levant",
+          "Lavant company",
+          "Al-Durra",
+          "Aldurra",
+          "Al Durra",
+          "ALDurra Food Products Co.",
+          "Al-Durra International Food Products"
+        ],
+        "factory_countries": [
+          "EGY",
+          "JOR",
+          "SYR"
+        ],
+        "competitor_origins": [
+          "TUR",
+          "LBN",
+          "IND",
+          "CHN",
+          "ESP",
+          "GRC",
+          "ITA",
+          "USA",
+          "MAR",
+          "TUN",
+          "IRN",
+          "VNM"
+        ],
+        "alert_spike_pct": 50
+      },
+      "company_aliases": {
+        "Hadaek Shtora": [
+          "Chtoura Garden",
+          "Hadayek Chtoura",
+          "Hadaek Shtoura"
+        ],
+        "Hiens company": [
+          "Heinz",
+          "Kraft Heinz",
+          "The Kraft Heinz Company",
+          "H.J. Heinz"
+        ]
+      },
+      "company_notes": {
+        "Hadaek Shtora": "Brief names this competitor as Chtoura Garden / Hadayek Chtoura (Lebanon). Legal entity not yet verified.",
+        "Hiens company": "Brief names this competitor as Heinz (The Kraft Heinz Company). Legal entity match not yet verified."
+      },
+      "entity_updates": {
+        "Lavant company": {
+          "notes": "Exporting entity in Jordan, named 'Levant' in the brief; the exact legal name is still to be obtained from the client."
+        }
+      },
+      "answers": {
+        "three countries": "Client-provided (build brief, 28 Oct 2026): manufacturing is in Syria, Jordan and Egypt. Exporting entities: Bertaya Food Industries (Egypt) and Levant (Jordan).",
+        "Molokai": "Client-provided (build brief, 28 Oct 2026): molokhia is made only in Egypt. The Egyptian exporting entity is Bertaya Food Industries; whether Bertaya also manufactures it is not stated."
+      },
+      "requirements": [
+        {
+          "company": "The Kroger Co.",
+          "title": "Register as a Prospect Vendor in Kroger Supplier Hub",
+          "detail": "New vendors register as a Prospect Vendor, then complete the profile through Partner Pass; the profile becomes a Vendor profile only after business is awarded.",
+          "source_url": "https://www.thekrogerco.com/vendor-suppliers/supplier-hub/",
+          "verified_at": "2026-10-28"
+        },
+        {
+          "company": "The Kroger Co.",
+          "title": "Accept the Our Brands Addendum for Kroger-label products",
+          "detail": "Required for vendors supplying products under a Kroger brand label (private label).",
+          "source_url": "https://www.thekrogerco.com/vendor-suppliers/supplier-hub/",
+          "verified_at": "2026-10-28"
+        },
+        {
+          "company": "The Kroger Co.",
+          "title": "Work through Kroger's New Vendor Checklist",
+          "detail": "Kroger's published checklist for new suppliers (PDF).",
+          "source_url": "https://www.thekrogerco.com/wp-content/uploads/2024/08/KrogerCoNewSupplierChecklist-1.pdf",
+          "verified_at": "2026-10-28"
+        },
+        {
+          "company": "Walmart Inc.",
+          "title": "Register through Walmart's 'Apply to be a supplier' page",
+          "detail": "First step for Walmart U.S., Walmart.com and Sam's Club; indicate interest in manufacturing Walmart Brands during registration.",
+          "source_url": "https://corporate.walmart.com/suppliers/apply-to-be-a-supplier",
+          "verified_at": "2026-10-28"
+        },
+        {
+          "company": "Walmart Inc.",
+          "title": "Review Walmart's supplier requirements",
+          "detail": "Walmart's published requirements for suppliers.",
+          "source_url": "https://corporate.walmart.com/suppliers/requirements",
+          "verified_at": "2026-10-28"
+        },
+        {
+          "market": "USA",
+          "title": "FDA food facility registration (renewed every other year)",
+          "detail": "Facilities that manufacture, process, pack or hold food for consumption in the United States must register with FDA.",
+          "source_url": "https://www.fda.gov/food/guidance-regulation-food-and-dietary-supplements/registration-food-facilities-and-other-submissions",
+          "verified_at": "2026-10-28"
+        },
+        {
+          "market": "USA",
+          "title": "A US importer with an FSVP for each food",
+          "detail": "The FSVP importer (the US owner or consignee) must develop, maintain and follow a Foreign Supplier Verification Program for each food imported.",
+          "source_url": "https://www.fda.gov/food/food-safety-modernization-act-fsma/final-rule-foreign-supplier-verification-programs-fsvp-glance",
+          "verified_at": "2026-10-28"
+        }
+      ]
+    }
+  ]
 }

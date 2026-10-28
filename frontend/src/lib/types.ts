@@ -1,5 +1,5 @@
 export type Role = 'admin' | 'analyst' | 'viewer'
-export type User = { id: number; email: string; full_name: string; role: Role; is_active: boolean }
+export type User = { id: number; email: string; full_name: string; role: Role; is_active: boolean; language?: 'en' | 'ar' }
 
 export type Product = {
   id: number
@@ -33,7 +33,7 @@ export type Product = {
   has_trade_data: boolean
 }
 
-export type HsStatus = 'confirmed' | 'candidate' | 'insufficient_info' | 'unmapped'
+export type HsStatus = 'confirmed' | 'candidate' | 'discrepancy' | 'insufficient_info' | 'unmapped'
 export type Identity = 'confirmed' | 'needs_confirmation' | 'unverified'
 
 export type Entity = {
@@ -62,7 +62,7 @@ export type Clarification = {
 }
 
 export type TargetMarket = { iso3: string; name: string; segment: 'existing' | 'expansion'; regions: string[]; source: string; notes: string; updated_at: string }
-export type Region = { name: string; members: { iso3: string; name: string }[] }
+export type Region = { name: string; note?: string; members: { iso3: string; name: string }[] }
 
 export type ExploreResult = {
   hs_code: string
@@ -247,6 +247,7 @@ export type Company = {
   score_components: Record<string, ScoreComponent>
   pipeline_stage: Stage
   identity_status: Identity
+  aliases: string[]
   vendor_url: string
   owner_id: number | null
   next_action: string
@@ -261,12 +262,130 @@ export type Company = {
 
 export type CompanyBrief = {
   company: string
+  language?: 'en' | 'ar'
   generated_at: string
   model: string
+  prompt_version?: string
   cost_usd: number
   sections: { title: string; statements: Statement[] }[]
   outreach_email: { subject: string; body: string; warnings: string[] }
+  whatsapp_message?: string
   evidence: Evidence[]
+}
+
+export type BriefVersion = { id: number; language: 'en' | 'ar'; model: string; prompt_version: string; cost_usd: number; created_at: string }
+
+export type FitKey = 'category_match' | 'volume' | 'consistency' | 'displaceable_origins' | 'growth' | 'supplier_change'
+export type BuyerMetrics = {
+  shipments_12m: number
+  shipments_total: number
+  active_months_12m: number
+  median_gap_days: number | null
+  weight_kg_12m: number
+  rows_without_weight_12m: number
+  weight_last6_kg: number
+  weight_prior6_kg: number
+  trend: number | null
+  origins_12m: Record<string, number>
+  origin_hhi: number | null
+  new_origins_6m: string[]
+  first_shipment: string | null
+  last_shipment: string | null
+}
+export type BuyerRow = {
+  company: { id: number; name: string; country_iso3: string; relationship_type: Relationship; identity_status: Identity }
+  metrics: BuyerMetrics
+  top_suppliers: { name: string; shipments: number }[]
+  hs_codes: string[]
+  score: number | null
+  components: Record<FitKey, number | null>
+  missing: FitKey[]
+}
+export type BuyersResult = { weights: Record<FitKey, number>; labels: Record<FitKey, string>; competitor_origins: string[]; buyers: BuyerRow[]; source_note: string }
+
+export type Duty = {
+  rate_pct: number
+  basis: string
+  agreement: string
+  specific_rate: string
+  source: string
+  source_url: string
+  data_year: number | null
+  verified_at: string
+  additional: { pct: number | null; note: string; source_url: string }[]
+  hs_line: string
+}
+export type UnitValue = { usd_per_kg: number | null; year: number | null; excluded: number; source_url?: string; value_usd?: number; net_weight_kg?: number }
+export type AccessOrigin = {
+  origin_iso3: string
+  fob_usd_per_kg: number | null
+  fob_basis: string | null
+  freight_usd_per_kg: number | null
+  freight: { carrier: string; mode: string; container: string; cost_usd: number; payload_kg: number; transit_days: number | null; valid_until: string | null; confidence: string } | null
+  insurance_usd_per_kg: number | null
+  duty: Duty | null
+  duty_usd_per_kg: number | null
+  landed_usd_per_kg: number | null
+  missing: string[]
+  origin_unit_value: UnitValue
+}
+export type AccessResult = { market: string; hs6: string; insurance_pct: number; benchmark: UnitValue; origins: AccessOrigin[]; best_origin: string | null; formula: string; note: string | null }
+
+export type Tariff = {
+  id: number
+  importer_iso3: string
+  hs_code: string
+  origin_iso3: string
+  rate_type: 'MFN' | 'preferential' | 'additional'
+  ad_valorem_pct: number | null
+  specific_rate: string
+  agreement: string
+  data_year: number | null
+  source: 'wits' | 'usitc' | 'override'
+  source_url: string
+  verified_at: string | null
+  notes: string
+}
+
+export type AlertItem = { id: number; type: string; title: string; company_id: number | null; hs_code: string; payload: Record<string, unknown>; created_at: string; read_at: string | null }
+
+export type SourceFreshness = { key: string; name: string; confidence: string; rows?: number; latest_period?: string | null; last_retrieved?: string | null; last_run?: Run | null; needs?: string | null; by_source?: Record<string, number>; cached?: number }
+
+export type Requirement = { id: number; title: string; detail: string; source_url: string; status: 'todo' | 'in_progress' | 'met' | 'not_applicable'; market_iso3: string; verified_at: string | null }
+export type RetailerPath = {
+  company: { id: number; name: string; markets: string[] }
+  direct_importer: boolean
+  direct_shipments: number
+  direct_client_hs_shipments: number
+  suppliers: { shipper: string; origin_iso3: string; shipments: number; weight_kg: number; hs_codes: string[] }[]
+  route_in: BuyerRow[]
+  requirements: Requirement[]
+}
+export type CompetitorTracker = {
+  company: { id: number; name: string; aliases: string[] }
+  shipments: number
+  buyers: { id: number; name: string; shipments: number; weight_kg: number; first: string; last: string; ours: boolean }[]
+  not_our_buyers: { id: number; name: string; shipments: number; weight_kg: number; first: string; last: string; ours: boolean }[]
+  by_quarter: Record<string, number>
+  by_market: Record<string, number>
+  client_shippers_configured: boolean
+}
+
+export type ImportBatch = { id: number; provider: string; filename: string; row_count: number; inserted: number; duplicates: number; errors: { line: number; error: string }[]; status: string; created_at: string | null }
+export type ShipmentPreview = {
+  columns: string[]
+  rows: number
+  fields: Record<string, string>
+  suggested_mapping: Record<string, string>
+  sample: Record<string, string | number | null>[]
+  sample_errors: { line: number; error: string }[]
+  mapping_error: string | null
+}
+export type MonthlyResult = {
+  hs6: string
+  reporter: string
+  rows: { source: string; partner_iso3: string; partner_name: string; product_code: string; period: string; value_usd: number | null; value_native: number | null; currency: string; fx_rate: number | null; net_weight_kg: number | null; quantity: number | null; unit: string; source_id: number }[]
+  sources: { id: number; url: string; retrieved_at: string; adapter: string; licence: string }[]
 }
 
 export type NewsItem = { title: string; summary: string; date: string; topic: string; url: string; source_title: string }
@@ -327,6 +446,9 @@ export type Provider = { key: string; name: string; status: string; detail: stri
 export type Quote = {
   id: number
   origin: string
+  origin_iso3: string
+  payload_kg: number | null
+  cost_per_kg: number | null
   destination: string
   destination_iso3: string
   mode: string

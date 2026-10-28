@@ -46,6 +46,7 @@ def apply(db: Session, setup_path: Path = SETUP, hs_path: Path = HS_LIST, force:
     }
     out["hs_list"] = apply_hs_list(db, hs_path, setup.get("company_profile", {}).get("brand", ""))
     out["priority"] = _apply_priority_skus(db, setup.get("priority_skus", {}))
+    out["patches"] = apply_patches(db, setup.get("patches", []))
     settings.put(db, VERSION_KEY, version)
     db.commit()
     return out
@@ -146,6 +147,8 @@ def apply_hs_list(db: Session, path: Path = HS_LIST, brand: str = "") -> dict:
         source = f"{HS_LIST_SOURCE}, row {r['row_no'] or 'unnumbered'}: {r['client_hs_code']} {label}".strip()
         hs6 = r["analysis_hs6"] if r["analysis_hs6"] in valid else None
         status = r["status"] if hs6 else "unmapped"
+        if status == "candidate" and hs6_of(r["client_hs_code"]) != hs6:
+            status = "discrepancy"  # the client's code points to another product family
         targets = [db.scalar(select(Product).where(Product.sku == s)) for s in r["skus"].split(";") if s]
         targets = [p for p in targets if p]
         if r["new_sku"]:
@@ -185,3 +188,67 @@ def _apply_priority_skus(db: Session, mapping: dict[str, list[str]]) -> int:
             p.priority_category = category
             n += 1
     return n
+
+
+def apply_patches(db: Session, patches: list[dict]) -> list[str]:
+    """One-time updates from later client briefs. Each patch runs once (tracked by id) and only adds information:
+    aliases, region members, notes, answers and sourced requirements. Nothing edited in the app is removed."""
+    from datetime import date as _date
+
+    from app.models import RetailerRequirement
+
+    done = list(settings.get_raw(db, "client_patches_applied") or [])
+    applied = []
+    for p in patches:
+        if p["id"] in done:
+            continue
+        merge = p.get("settings_merge", {})
+        if "regions" in merge or "settings_replace_region" in p:
+            regions = dict(settings.get(db, "regions"))
+            for name, members in merge.get("regions", {}).items():
+                regions[name] = sorted(set(regions.get(name, [])) | set(members))
+            regions.update(p.get("settings_replace_region", {}))
+            settings.put(db, "regions", regions)
+        if "region_notes" in merge:
+            settings.put(db, "region_notes", {**(settings.get_raw(db, "region_notes") or {}), **merge["region_notes"]})
+        for key, value in p.get("settings_set_if_missing", {}).items():
+            if settings.get_raw(db, key) is None:
+                settings.put(db, key, value)
+        for name, aliases in p.get("company_aliases", {}).items():
+            for c in db.scalars(select(Company).where(Company.name == name)):
+                c.aliases = sorted(set(c.aliases or []) | set(aliases))
+        for name, note in p.get("company_notes", {}).items():
+            for c in db.scalars(select(Company).where(Company.name == name)):
+                if note not in (c.notes or ""):
+                    c.notes = f"{c.notes}\n{note}".strip()
+        for name, fields in p.get("entity_updates", {}).items():
+            e = db.scalar(select(Entity).where(Entity.name == name))
+            if e:
+                e.notes = fields.get("notes", e.notes)
+        for needle, answer in p.get("answers", {}).items():
+            for q in db.scalars(
+                select(Clarification).where(Clarification.question.contains(needle), Clarification.status == "open")
+            ):
+                q.answer, q.status = answer, "answered"
+                q.answered_at = datetime.now(UTC)
+        for r in p.get("requirements", []):
+            company = db.scalar(select(Company).where(Company.name == r["company"])) if r.get("company") else None
+            if r.get("company") and not company:
+                continue
+            exists = db.scalar(select(RetailerRequirement).where(RetailerRequirement.title == r["title"]))
+            if not exists:
+                db.add(
+                    RetailerRequirement(
+                        company_id=company.id if company else None,
+                        market_iso3=r.get("market", ""),
+                        title=r["title"],
+                        detail=r.get("detail", ""),
+                        source_url=r["source_url"],
+                        verified_at=_date.fromisoformat(r["verified_at"]) if r.get("verified_at") else None,
+                    )
+                )
+        done.append(p["id"])
+        applied.append(p["id"])
+    settings.put(db, "client_patches_applied", done)
+    db.flush()
+    return applied

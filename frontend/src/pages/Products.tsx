@@ -130,7 +130,7 @@ function CoveragePanel() {
             <div className="h-full rounded-full bg-brand-600 transition-[width] duration-700" style={{ width: `${pct}%` }} />
           </div>
         </div>
-        {can('analyst') && d.active.length === 0 && missing > 0 && (
+        {can('admin') && d.active.length === 0 && missing > 0 && (
           <Button icon={<Database className="size-4" />} loading={start.isPending} onClick={() => start.mutate()}>
             Load missing data ({missing})
           </Button>
@@ -216,12 +216,8 @@ export default function Products() {
             <Button variant="secondary" icon={<Download className="size-4" />} loading={exp.isPending} onClick={() => exp.mutate()} disabled={!all.length}>
               Export CSV
             </Button>
-            {can('analyst') && (
-              <>
-                <Button variant="secondary" icon={<FileUp className="size-4" />} onClick={() => setImporting(true)}>Import</Button>
-                <Button icon={<Plus className="size-4" />} onClick={() => setEditing('new')}>Add product</Button>
-              </>
-            )}
+            {can('admin') && <Button variant="secondary" icon={<FileUp className="size-4" />} onClick={() => setImporting(true)}>Import</Button>}
+            {can('analyst') && <Button icon={<Plus className="size-4" />} onClick={() => setEditing('new')}>Add product</Button>}
           </>
         }
       />

@@ -7,13 +7,14 @@ import { CountUp } from '../components/lightswind/count-up'
 import { Badge, Card, Notice, PageHeader, SectionTitle, Skeleton, StatusDot } from '../components/ui'
 import { api } from '../lib/api'
 import { date, dateTime } from '../lib/format'
-import { HS_STATUS, RELATIONSHIP_LABEL, STAGES } from '../lib/labels'
+import { ALERT_LABEL, HS_STATUS, RELATIONSHIP_LABEL, STAGES } from '../lib/labels'
 import { useReveal } from '../lib/motion'
-import type { AppSettings, HsStatus, OverviewData, Provider } from '../lib/types'
+import type { AlertItem, AppSettings, BuyersResult, HsStatus, OverviewData, Provider, SourceFreshness } from '../lib/types'
 
 const HS_BAR: Record<HsStatus, string> = {
   confirmed: 'bg-emerald-500',
   candidate: 'bg-amber-400',
+  discrepancy: 'bg-orange-500',
   insufficient_info: 'bg-red-400',
   unmapped: 'bg-slate-300',
 }
@@ -44,6 +45,9 @@ export default function Overview() {
   const ov = useQuery({ queryKey: ['overview-dash'], queryFn: () => api<OverviewData>('/api/overview') })
   const sources = useQuery({ queryKey: ['sources'], queryFn: () => api<(Provider & { last_run?: { status: string; finished_at: string | null } | null })[]>('/api/admin/sources') })
   const settings = useQuery({ queryKey: ['settings'], queryFn: () => api<AppSettings>('/api/admin/settings') })
+  const fresh = useQuery({ queryKey: ['freshness'], queryFn: () => api<{ sources: SourceFreshness[] }>('/api/admin/freshness') })
+  const alerts = useQuery({ queryKey: ['alerts', 'unread'], queryFn: () => api<AlertItem[]>('/api/alerts?unread=true') })
+  const buyers = useQuery({ queryKey: ['buyers', ''], queryFn: () => api<BuyersResult>('/api/buyers') })
   const ref = useReveal<HTMLDivElement>([ov.isSuccess])
   const [today] = useState(() => new Date().toLocaleDateString('en-CA'))
   const d = ov.data
@@ -77,9 +81,56 @@ export default function Overview() {
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Kpi label="Products" value={d.products.total} hint={`${d.products.with_client_code} carry a client HS code`} to="/products" />
-        <Kpi label="HS codes confirmed" value={d.products.by_hs_status.confirmed} hint={`${d.products.by_hs_status.candidate + d.products.by_hs_status.insufficient_info} need review`} to="/products" />
+        <Kpi label="HS codes confirmed" value={d.products.by_hs_status.confirmed} hint={`${d.products.by_hs_status.candidate + d.products.by_hs_status.discrepancy + d.products.by_hs_status.insufficient_info} need review`} to="/products" />
         <Kpi label="Retail accounts" value={retail} hint="Priority retailers tracked" to="/accounts" />
         <Kpi label="Open client questions" value={openQ} hint="Answers recorded, never assumed" to="/client" />
+      </div>
+
+      <div className="mt-6 grid gap-6 xl:grid-cols-3">
+        <Card className="p-5">
+          <SectionTitle title="Data freshness" hint="per source" action={<Link to="/data" className="text-[12.5px] font-medium text-brand-700 hover:underline">Data admin</Link>} />
+          <ul className="space-y-2">
+            {(fresh.data?.sources ?? []).map((src) => (
+              <li key={src.key} className="flex items-start justify-between gap-3 text-[12.5px]">
+                <span className="min-w-0">
+                  <span className="block truncate text-ink-900">{src.name}</span>
+                  <span className="text-muted">{src.latest_period ? `to ${src.latest_period} · ` : ''}{src.last_retrieved ? date(src.last_retrieved) : src.needs ? `needs ${src.needs}` : 'not loaded'}</span>
+                </span>
+                <Badge tone={src.confidence === 'official' ? 'green' : src.confidence === 'licensed' ? 'blue' : 'amber'}>{src.confidence}</Badge>
+              </li>
+            ))}
+          </ul>
+        </Card>
+        <Card className="p-5">
+          <SectionTitle title="New alerts" action={<Link to="/alerts" className="text-[12.5px] font-medium text-brand-700 hover:underline">All alerts</Link>} />
+          {(alerts.data ?? []).length === 0 ? (
+            <p className="text-[13px] text-muted">No unread alerts.</p>
+          ) : (
+            <ul className="space-y-2">
+              {alerts.data!.slice(0, 6).map((a) => (
+                <li key={a.id} className="text-[12.5px]">
+                  <Badge tone={(ALERT_LABEL[a.type] ?? { tone: 'blue' }).tone}>{(ALERT_LABEL[a.type] ?? { text: a.type }).text}</Badge>
+                  <span className="ml-2 text-ink-900">{a.title}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+        <Card className="p-5">
+          <SectionTitle title="Top-scored buyers" action={<Link to="/buyers" className="text-[12.5px] font-medium text-brand-700 hover:underline">Buyer finder</Link>} />
+          {(buyers.data?.buyers ?? []).length === 0 ? (
+            <p className="text-[13px] text-muted">No shipment records uploaded yet.</p>
+          ) : (
+            <ul className="divide-y divide-line-soft">
+              {buyers.data!.buyers.slice(0, 6).map((b) => (
+                <li key={b.company.id} className="flex items-center justify-between gap-3 py-2 text-[13px]">
+                  <span className="truncate text-ink-900">{b.company.name} <span className="num text-[11px] text-muted">{b.company.country_iso3}</span></span>
+                  <span className="num text-ink-900">{b.score?.toFixed(0) ?? '—'}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
       </div>
 
       <div className="mt-9 grid gap-6 xl:grid-cols-[1.35fr_1fr]">

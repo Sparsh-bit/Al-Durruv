@@ -1,6 +1,7 @@
 """Acceptance criteria from the client brief (audit & gap-closure spec), one test or more per criterion."""
 
 import csv
+import json
 import time
 
 import pandas as pd
@@ -37,7 +38,7 @@ def _apply(db):
 # 1. client HS codes are preserved exactly ------------------------------------------------------------
 
 
-def test_client_hs_codes_preserved_verbatim(db, analyst):
+def test_client_hs_codes_preserved_verbatim(db, analyst, admin):
     _apply(db)
     by_code = {p.sku: p for p in db.scalars(select(Product))}
     assert by_code["DUR-PKL-001"].client_hs_code == "2001190000"
@@ -54,16 +55,16 @@ def test_client_hs_codes_preserved_verbatim(db, analyst):
     r = analyst.put(f"/api/products/{p.id}", json=body)
     assert r.status_code == 422 and "kept exactly" in r.json()["detail"]
     csv_bytes = b"sku,name,hs_code,client_hs_code\nDUR-TOM-001,Tomato Paste,200290,1111111111\n"
-    res = analyst.post("/api/products/import", files={"file": ("p.csv", csv_bytes, "text/csv")}).json()
+    res = admin.post("/api/products/import", files={"file": ("p.csv", csv_bytes, "text/csv")}).json()
     assert res["errors"] and "kept unchanged" in res["errors"][0]["error"]
     db.expire_all()
     assert db.get(Product, p.id).client_hs_code == "2103200090"
 
 
-def test_reapplying_client_data_never_overwrites_review(db, analyst):
+def test_reapplying_client_data_never_overwrites_review(db, analyst, admin):
     _apply(db)
     p = db.scalar(select(Product).where(Product.sku == "DUR-TOM-001"))
-    analyst.post(f"/api/products/{p.id}/hs-review", json={"hs_code": "200290", "status": "confirmed"})
+    admin.post(f"/api/products/{p.id}/hs-review", json={"hs_code": "200290", "status": "confirmed"})
     client_data.apply(db, force=True)
     db.expire_all()
     p = db.get(Product, p.id)
@@ -80,7 +81,7 @@ def test_unverified_codes_are_flagged_with_reasons(db, viewer):
     products = {p["sku"]: p for p in viewer.get("/api/products").json()}
     assert all(p["hs_status"] != "confirmed" for p in products.values())
     cucumber = products["DUR-PKL-001"]
-    assert cucumber["hs_status"] == "candidate"
+    assert cucumber["hs_status"] == "discrepancy"  # client prefix 200119 does not exist
     assert any("not an HS6 subheading" in i for i in cucumber["hs_check"]["issues"])  # 200119 does not exist
     paste = products["DUR-TOM-001"]
     assert paste["hs_check"]["client_hs6"] == "210320" and not paste["hs_check"]["matches_client"]
@@ -95,20 +96,21 @@ def test_hs_review_requires_valid_code_and_is_audited(db, analyst, admin, viewer
     _apply(db)
     p = db.scalar(select(Product).where(Product.sku == "DUR-TOM-001"))
     assert (
-        analyst.post(f"/api/products/{p.id}/hs-review", json={"hs_code": "999999", "status": "confirmed"}).status_code
+        admin.post(f"/api/products/{p.id}/hs-review", json={"hs_code": "999999", "status": "confirmed"}).status_code
         == 422
     )
-    assert analyst.post(f"/api/products/{p.id}/hs-review", json={"status": "confirmed"}).status_code == 422
+    assert admin.post(f"/api/products/{p.id}/hs-review", json={"status": "confirmed"}).status_code == 422
     assert (
         viewer.post(f"/api/products/{p.id}/hs-review", json={"hs_code": "200290", "status": "confirmed"}).status_code
         == 403
     )
-    ok = analyst.post(f"/api/products/{p.id}/hs-review", json={"hs_code": "200290", "status": "confirmed"}).json()
+    ok = admin.post(f"/api/products/{p.id}/hs-review", json={"hs_code": "200290", "status": "confirmed"}).json()
     assert ok["hs_status"] == "confirmed" and ok["client_hs_code"] == "2103200090"
     assert any(e["action"] == "hs_review" for e in admin.get("/api/admin/audit").json())
     # editing the code afterwards drops the confirmation
     body = {"sku": p.sku, "name": p.name, "hs_code": "210320", "hs_status": "confirmed", "client_hs_code": "2103200090"}
-    assert analyst.put(f"/api/products/{p.id}", json=body).json()["hs_status"] == "candidate"
+    assert analyst.put(f"/api/products/{p.id}", json=body).status_code == 403  # mapping changes are admin-only
+    assert admin.put(f"/api/products/{p.id}", json=body).json()["hs_status"] == "candidate"
 
 
 def test_priority_categories_entities_and_clarifications_loaded(db, analyst):
@@ -201,7 +203,7 @@ def test_explorer_region_and_iso_with_two_m49_codes(db, viewer, admin):
     assert viewer.get("/api/markets/190531/explore", params={"year_from": 2023, "year_to": 2020}).status_code == 422
 
 
-def test_live_fetch_real_request_path_and_truthful_errors(db, analyst, viewer, monkeypatch):
+def test_live_fetch_real_request_path_and_truthful_errors(db, analyst, viewer, monkeypatch, admin):
     _countries(db)
     monkeypatch.setattr(comtrade.time, "sleep", lambda s: None)
     calls = []
@@ -229,35 +231,35 @@ def test_live_fetch_real_request_path_and_truthful_errors(db, analyst, viewer, m
     monkeypatch.setattr(comtrade.comtradeapicall, "previewFinalData", preview)
     body = {"flow": "M", "reporters": ["GBR"], "years": [2023]}
     assert viewer.post("/api/markets/190531/explore/fetch", json=body).status_code == 403
-    ok = analyst.post("/api/markets/190531/explore/fetch", json=body).json()
+    ok = admin.post("/api/markets/190531/explore/fetch", json=body).json()
     assert ok["stored"] == 1 and calls[0]["reporterCode"] == "826" and calls[0]["cmdCode"] == "190531"
     assert ok["source"]["url"].startswith("https://comtradeapi.un.org/public/v1/preview")
-    analyst.post("/api/markets/190531/explore/fetch", json=body)
+    admin.post("/api/markets/190531/explore/fetch", json=body)
     assert len(calls) == 1  # identical request served from cache
 
     def quota(**kw):
         print("Error: Out of call volume quota. Quota will be replenished in 00:02:00.")
 
     monkeypatch.setattr(comtrade.comtradeapicall, "previewFinalData", quota)
-    r = analyst.post("/api/markets/190531/explore/fetch", json={**body, "years": [2022]})
+    r = admin.post("/api/markets/190531/explore/fetch", json={**body, "years": [2022]})
     assert r.status_code == 429 and r.headers["Retry-After"]
 
     def down(**kw):
         print('{"statusCode": 503, "message": "Service unavailable"}')
 
     monkeypatch.setattr(comtrade.comtradeapicall, "previewFinalData", down)
-    r = analyst.post("/api/markets/190531/explore/fetch", json={**body, "years": [2021]})
+    r = admin.post("/api/markets/190531/explore/fetch", json={**body, "years": [2021]})
     assert r.status_code == 502 and "did not return data" in r.json()["detail"]
-    assert analyst.post("/api/markets/190531/explore/fetch", json={**body, "reporters": ["XXX"]}).status_code == 422
-    assert analyst.post("/api/markets/190531/explore/fetch", json={**body, "years": [2999]}).status_code == 422
+    assert admin.post("/api/markets/190531/explore/fetch", json={**body, "reporters": ["XXX"]}).status_code == 422
+    assert admin.post("/api/markets/190531/explore/fetch", json={**body, "years": [2999]}).status_code == 422
 
 
-def test_duplicate_live_requests_are_rejected(db, analyst):
+def test_duplicate_live_requests_are_rejected(db, analyst, admin):
     _countries(db)
     key = "190531|M|[826]|0|[2023]"
     explore._inflight.add(key)
     try:
-        r = analyst.post("/api/markets/190531/explore/fetch", json={"reporters": ["GBR"], "years": [2023]})
+        r = admin.post("/api/markets/190531/explore/fetch", json={"reporters": ["GBR"], "years": [2023]})
         assert r.status_code == 409
     finally:
         explore._inflight.discard(key)
@@ -346,24 +348,24 @@ def test_empty_and_unavailable_states(db, viewer, analyst):
     assert analyst.post("/api/ai/ask", json={"hs_code": "190531", "question": "Best market?"}).status_code == 503
 
 
-def test_target_market_import_validates_rows(db, analyst, viewer):
+def test_target_market_import_validates_rows(db, analyst, viewer, admin):
     _countries(db)
     data = "country,segment,notes\nGermany,existing,since 2019\nusa,expansion,\nAtlantis,existing,\nFRA,maybe,\n"
-    r = analyst.post("/api/target-markets/import", files={"file": ("m.csv", data.encode(), "text/csv")}).json()
+    r = admin.post("/api/target-markets/import", files={"file": ("m.csv", data.encode(), "text/csv")}).json()
     assert r["imported"] == 2 and {e["line"] for e in r["errors"]} == {4, 5}
     listed = viewer.get("/api/target-markets").json()
     assert listed["counts"] == {"existing": 1, "expansion": 1}
-    bad = analyst.post("/api/target-markets/import", files={"file": ("m.csv", b"name_x\nA\n", "text/csv")})
+    bad = admin.post("/api/target-markets/import", files={"file": ("m.csv", b"name_x\nA\n", "text/csv")})
     assert bad.status_code == 422
 
 
-def test_private_label_opportunities_are_transparent(db, viewer, analyst):
+def test_private_label_opportunities_are_transparent(db, viewer, analyst, admin):
     _apply(db)
     _countries(db)
     for hs in ("200110", "200190", "200290"):
         _obs(db, hs, {826: {2021: 10e6, 2022: 12e6, 2023: 15e6}, 842: {2021: 40e6, 2022: 45e6, 2023: 50e6}})
-    analyst.put("/api/target-markets/USA", json={"segment": "expansion"})
-    analyst.put("/api/target-markets/GBR", json={"segment": "existing"})
+    admin.put("/api/target-markets/USA", json={"segment": "expansion"})
+    admin.put("/api/target-markets/GBR", json={"segment": "existing"})
     res = viewer.post("/api/markets/opportunities", json={}).json()
     assert res["target_list_loaded"]
     rows = [r for r in res["rows"] if r["category"] == "Tomato paste"]
@@ -398,13 +400,13 @@ def test_overview_reports_freshness_and_workload(db, viewer):
 # large-scale behaviour ------------------------------------------------------------------------------
 
 
-def test_scale_catalogue_import_and_explorer(db, analyst, viewer):
+def test_scale_catalogue_import_and_explorer(db, analyst, viewer, admin):
     _hs_reference(db)
     lines = ["sku,name,hs_code,client_hs_code,category"] + [
         f"S{i:05d},Product {i},200190,2001900020,Pickles" for i in range(3000)
     ]
     t0 = time.monotonic()
-    r = analyst.post("/api/products/import", files={"file": ("big.csv", "\n".join(lines).encode(), "text/csv")})
+    r = admin.post("/api/products/import", files={"file": ("big.csv", "\n".join(lines).encode(), "text/csv")})
     assert r.json()["created"] == 3000
     assert len(viewer.get("/api/products").json()) == 3000
     iso = [chr(65 + i // 26) + chr(65 + i % 26) + "Z" for i in range(150)]
@@ -432,3 +434,22 @@ def test_scale_catalogue_import_and_explorer(db, analyst, viewer):
     ex = viewer.get("/api/markets/200190/explore").json()
     assert len(ex["series"]) == explore.DEFAULT_TOP and ex["series"][0]["values"]["2023"] == pytest.approx(150e6 + 2023)
     assert time.monotonic() - t0 < 60
+
+
+def test_brief_patch_applies_once(db, viewer):
+    _apply(db)
+    from app.models import RetailerRequirement
+    from app.services import settings as app_settings
+
+    hiens = db.scalar(select(Company).where(Company.name == "Hiens company"))
+    assert "Kraft Heinz" in hiens.aliases and hiens.identity_status == "needs_confirmation"
+    q = db.scalar(select(Clarification).where(Clarification.question.contains("three countries")))
+    assert q.status == "answered" and "Syria, Jordan and Egypt" in q.answer
+    regions = app_settings.get(db, "regions")
+    assert regions["GCC"] == ["ARE", "BHR", "KWT", "OMN", "QAT", "SAU"]
+    assert regions["Far East"] == ["JPN", "KOR", "CHN", "MYS", "SGP", "AUS"]
+    assert {r["name"]: r["note"] for r in viewer.get("/api/regions").json()}["Far East"].startswith("Country list")
+    n = db.scalar(select(func.count()).select_from(RetailerRequirement))
+    assert n == 7 and all(r.source_url.startswith("https://") for r in db.scalars(select(RetailerRequirement)))
+    client_data.apply_patches(db, json.loads(client_data.SETUP.read_text())["patches"])
+    assert db.scalar(select(func.count()).select_from(RetailerRequirement)) == n  # applied once

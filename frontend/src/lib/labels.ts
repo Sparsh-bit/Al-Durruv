@@ -26,7 +26,8 @@ export const RELATIONSHIP_LABEL: Record<Relationship, string> = {
 
 export const HS_STATUS: Record<HsStatus, { text: string; tone: 'green' | 'amber' | 'red' | 'slate'; help: string }> = {
   confirmed: { text: 'Confirmed', tone: 'green', help: 'A reviewer confirmed this HS6 code for trade analysis.' },
-  candidate: { text: 'Candidate', tone: 'amber', help: 'Needs verification by the client or a customs broker.' },
+  candidate: { text: 'Needs review', tone: 'amber', help: 'Needs verification by the client or a customs broker.' },
+  discrepancy: { text: 'Discrepancy', tone: 'red', help: "The client's declared code points to a different product family. Confirm with the customs broker." },
   insufficient_info: { text: 'Insufficient info', tone: 'red', help: 'The product description is not enough to classify it. See the open question.' },
   unmapped: { text: 'Unmapped', tone: 'slate', help: 'No HS6 code is assigned yet.' },
 }
@@ -41,3 +42,11 @@ export const PL_META = {
   possible: { tone: 'amber', text: 'Private label: possible' },
   unknown: { tone: 'slate', text: 'Private label: unknown' },
 } as const
+
+export const ALERT_LABEL: Record<string, { text: string; tone: 'teal' | 'amber' | 'red' | 'blue' | 'green' }> = {
+  new_importer: { text: 'New importer', tone: 'teal' },
+  new_origin: { text: 'New supplier origin', tone: 'amber' },
+  volume_spike: { text: 'Volume up', tone: 'green' },
+  volume_drop: { text: 'Volume down', tone: 'red' },
+  competitor_new_buyer: { text: 'Competitor win', tone: 'blue' },
+}

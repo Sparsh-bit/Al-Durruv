@@ -6,6 +6,8 @@ from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app import ratelimit
+from app.config import get_settings
 from app.models import AiUsage
 from app.services import settings
 
@@ -38,7 +40,16 @@ def month_spend(db: Session) -> float:
     return float(db.scalar(select(func.coalesce(func.sum(AiUsage.cost_usd), 0)).where(AiUsage.created_at >= start)))
 
 
-def check_budget(db: Session) -> None:
+def check_budget(db: Session, user_id: int | None = None) -> None:
+    if user_id is not None:
+        ratelimit.hit(f"ai:{user_id}", 10)
+        today = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+        used = db.scalar(
+            select(func.count()).select_from(AiUsage).where(AiUsage.user_id == user_id, AiUsage.created_at >= today)
+        )
+        limit = get_settings().llm_daily_limit_per_user
+        if used >= limit:
+            raise HTTPException(429, f"Daily AI limit reached ({limit} requests per user). It resets at 00:00 UTC.")
     budget = float(settings.get(db, "ai_monthly_budget_usd"))
     spent = month_spend(db)
     if spent >= budget:

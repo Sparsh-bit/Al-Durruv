@@ -155,7 +155,7 @@ export default function MarketsRegions() {
         title="Markets & regions"
         subtitle="The client's country list, split into existing and expansion markets. It comes from the client's own file and is not hard-coded."
         actions={
-          can('analyst') && (
+          can('admin') && (
             <>
               <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={(e) => e.target.files?.[0] && upload.mutate(e.target.files[0])} />
               <Button icon={upload.isPending ? <Spinner className="size-4 text-white" /> : <FileUp />} onClick={() => fileRef.current?.click()}>
@@ -204,14 +204,14 @@ export default function MarketsRegions() {
                       <tr key={m.iso3} className="hover:bg-paper">
                         <td className={td}><span className="font-medium text-ink-900">{m.name}</span> <span className="num text-[11px] text-muted">{m.iso3}</span></td>
                         <td className={td}>
-                          <button type="button" disabled={!can('analyst')} onClick={() => setSeg.mutate(m)} title={can('analyst') ? 'Switch segment' : undefined}>
+                          <button type="button" disabled={!can('admin')} onClick={() => setSeg.mutate(m)} title={can('admin') ? 'Switch segment' : undefined}>
                             <Badge tone={m.segment === 'existing' ? 'teal' : 'blue'}>{m.segment}</Badge>
                           </button>
                         </td>
                         <td className={td}>{m.regions.join(', ') || <span className="text-muted">—</span>}</td>
                         <td className={`${td} text-[12px] text-muted`}>{m.source} · {date(m.updated_at)}</td>
                         <td className={`${td} text-right`}>
-                          {can('analyst') && <Button size="sm" variant="ghost" aria-label={`Remove ${m.name}`} onClick={() => remove.mutate(m.iso3)}><Trash2 /></Button>}
+                          {can('admin') && <Button size="sm" variant="ghost" aria-label={`Remove ${m.name}`} onClick={() => remove.mutate(m.iso3)}><Trash2 /></Button>}
                         </td>
                       </tr>
                     ))}

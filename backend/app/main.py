@@ -11,7 +11,7 @@ from sqlalchemy import text
 
 from app.config import get_settings
 from app.db import SessionLocal
-from app.routers import admin, ai, auth, catalogue, client, companies, markets, reports
+from app.routers import admin, ai, auth, catalogue, client, companies, intel, markets, reports
 from app.services import jobs
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -87,10 +87,15 @@ def health():
     except Exception:
         log.exception("Health check: database unreachable")
         return JSONResponse({"status": "error", "detail": "Database unreachable."}, 503)
-    return {"status": "ok", "ai_enabled": settings.ai_enabled, "model": settings.claude_model}
+    return {
+        "status": "ok",
+        "ai_enabled": settings.ai_enabled,
+        "model": settings.model_fast,
+        "model_brief": settings.model_brief,
+    }
 
 
-for r in (auth, catalogue, markets, companies, ai, reports, admin, client):
+for r in (auth, catalogue, markets, companies, ai, reports, admin, client, intel):
     app.include_router(r.router)
 
 # Catalogue page images (public marketing material; no auth so <img> tags can load them).

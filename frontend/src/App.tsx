@@ -13,6 +13,10 @@ const Opportunities = lazy(() => import('./pages/Opportunities'))
 const Accounts = lazy(() => import('./pages/Accounts'))
 const ClientWorkspace = lazy(() => import('./pages/ClientWorkspace'))
 const Integrations = lazy(() => import('./pages/Integrations'))
+const BuyerFinder = lazy(() => import('./pages/BuyerFinder'))
+const MarketAccess = lazy(() => import('./pages/MarketAccess'))
+const Alerts = lazy(() => import('./pages/Alerts'))
+const DataAdmin = lazy(() => import('./pages/DataAdmin'))
 const Markets = lazy(() => import('./pages/Markets'))
 const Companies = lazy(() => import('./pages/Companies'))
 const Analyst = lazy(() => import('./pages/Analyst'))
@@ -65,6 +69,17 @@ export default function App() {
           <Route path="accounts" element={<Accounts />} />
           <Route path="client" element={<ClientWorkspace />} />
           <Route path="integrations" element={<Integrations />} />
+          <Route path="buyers" element={<BuyerFinder />} />
+          <Route path="access" element={<MarketAccess />} />
+          <Route path="alerts" element={<Alerts />} />
+          <Route
+            path="data"
+            element={
+              <AdminOnly>
+                <DataAdmin />
+              </AdminOnly>
+            }
+          />
           <Route path="p/:productId">
             <Route index element={<Navigate to="markets" replace />} />
             <Route path="markets" element={<Markets />} />

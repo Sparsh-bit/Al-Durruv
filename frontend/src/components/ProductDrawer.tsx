@@ -151,7 +151,7 @@ export default function ProductDrawer({ product, siblings, onClose, onEdit }: {
                 Not customs-certain. Verify with the client or a customs broker before using it in declarations.
               </p>
             )}
-            {can('analyst') &&
+            {can('admin') &&
               (reviewing ? (
                 <HsReview p={p} onDone={() => setReviewing(false)} />
               ) : (

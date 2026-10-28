@@ -1,0 +1,94 @@
+{
+ "time": {
+  "label": "ISO-8601 Date/Time value",
+  "concept": "Census API Date/Time Specification",
+  "required": "true",
+  "predicateType": "datetime",
+  "group": "N/A",
+  "limit": 0,
+  "predicateOnly": true,
+  "datetime": {
+   "year": true,
+   "month": true
+  }
+ },
+ "CTY_CODE": {
+  "label": "4-character Country Code",
+  "concept": "Measures",
+  "required": "default displayed",
+  "predicateType": "string",
+  "group": "N/A",
+  "limit": 0
+ },
+ "CTY_NAME": {
+  "label": "50-character Country Name",
+  "concept": "Measures",
+  "predicateType": "string",
+  "group": "N/A",
+  "limit": 0
+ },
+ "I_COMMODITY": {
+  "label": "2-, 4-, 6-, or 10-character Import Harmonized Code",
+  "concept": "Measures",
+  "required": "default displayed",
+  "predicateType": "string",
+  "group": "N/A",
+  "limit": 0
+ },
+ "COMM_LVL": {
+  "label": "4-character aggregation levels for commodity code.  HS2=2-digit HS totals.  HS4=4-digit HS totals. HS6=6-digit HS totals.  HS10=10-digit HS totals.",
+  "concept": "Measures",
+  "predicateType": "string",
+  "group": "N/A",
+  "limit": 0
+ },
+ "GEN_VAL_MO": {
+  "label": "15-digit General Imports, Total Value",
+  "concept": "Measures",
+  "predicateType": "int",
+  "group": "N/A",
+  "limit": 0
+ },
+ "CON_VAL_MO": {
+  "label": "15-digit Imports for Consumption, Total Value",
+  "concept": "Measures",
+  "predicateType": "int",
+  "group": "N/A",
+  "limit": 0
+ },
+ "GEN_QY1_MO": {
+  "label": "15-digit General Imports, Quantity 1",
+  "concept": "Measures",
+  "predicateType": "int",
+  "group": "N/A",
+  "limit": 0
+ },
+ "UNIT_QY1": {
+  "label": "3-character Import Unit of Quantity 1",
+  "concept": "Measures",
+  "predicateType": "string",
+  "group": "N/A",
+  "limit": 0
+ },
+ "AIR_WGT_MO": {
+  "label": "15-digit Air Shipping Weight",
+  "concept": "Measures",
+  "predicateType": "int",
+  "group": "N/A",
+  "limit": 0
+ },
+ "VES_WGT_MO": {
+  "label": "15-digit Vessel Shipping Weight",
+  "concept": "Measures",
+  "predicateType": "int",
+  "group": "N/A",
+  "limit": 0
+ },
+ "CAL_DUT_MO": {
+  "label": "15-digit Imports for Consumption, Calculated Duty",
+  "concept": "Measures",
+  "predicateType": "int",
+  "group": "N/A",
+  "limit": 0
+ }
+}

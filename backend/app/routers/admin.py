@@ -19,7 +19,7 @@ from app.models import (
 )
 from app.routers.client import country_index
 from app.routers.markets import _run_out
-from app.security import DB, Admin, Analyst, CurrentUser
+from app.security import DB, Admin, CurrentUser
 from app.services import audit, settings
 
 router = APIRouter(prefix="/api", tags=["admin"])
@@ -45,7 +45,7 @@ def sources(_: CurrentUser, db: DB):
             "key": "claude",
             "name": "Claude AI analyst and web research",
             "status": "connected" if s.ai_enabled else "not_configured",
-            "detail": f"Model {s.claude_model}"
+            "detail": f"Models: {s.model_fast} (fast), {s.model_brief} (briefs)"
             if s.ai_enabled
             else "Set ANTHROPIC_API_KEY in .env to enable AI features.",
             "companies": db.scalar(select(func.count()).select_from(Company)),
@@ -80,6 +80,8 @@ def source(source_id: int, _: CurrentUser, db: DB):
 
 class QuoteIn(BaseModel):
     origin: str = Field(min_length=2, max_length=120)
+    origin_iso3: str = Field("", pattern="^([A-Za-z]{3})?$")
+    payload_kg: float | None = Field(None, gt=0, le=100000)
     destination: str = Field(min_length=2, max_length=120)
     destination_iso3: str = Field(min_length=3, max_length=3)
     mode: str = Field(pattern="^(sea|air|road|rail)$")
@@ -97,6 +99,9 @@ def _quote(q: LogisticsQuote) -> dict:
     return {
         "id": q.id,
         "origin": q.origin,
+        "origin_iso3": q.origin_iso3,
+        "payload_kg": q.payload_kg,
+        "cost_per_kg": q.cost_usd / q.payload_kg if q.cost_usd is not None and q.payload_kg else None,
         "destination": q.destination,
         "destination_iso3": q.destination_iso3,
         "mode": q.mode,
@@ -122,9 +127,13 @@ def logistics(_: CurrentUser, db: DB, destination_iso3: str | None = None):
 
 
 @router.post("/logistics", status_code=201)
-def add_quote(body: QuoteIn, user: Analyst, db: DB):
+def add_quote(body: QuoteIn, user: Admin, db: DB):
     q = LogisticsQuote(
-        **{**body.model_dump(), "destination_iso3": body.destination_iso3.upper()},
+        **{
+            **body.model_dump(),
+            "destination_iso3": body.destination_iso3.upper(),
+            "origin_iso3": body.origin_iso3.upper(),
+        },
         provenance="client_provided",
         created_by=user.id,
     )
@@ -137,7 +146,7 @@ def add_quote(body: QuoteIn, user: Analyst, db: DB):
 
 
 @router.delete("/logistics/{quote_id}", status_code=204)
-def delete_quote(quote_id: int, user: Analyst, db: DB):
+def delete_quote(quote_id: int, user: Admin, db: DB):
     q = db.get(LogisticsQuote, quote_id)
     if not q:
         raise HTTPException(404, "Quote not found.")
@@ -228,7 +237,7 @@ def ai_usage_report(_: Admin, db: DB):
     return {
         "month_spend_usd": ai_usage.month_spend(db),
         "budget_usd": float(settings.get(db, "ai_monthly_budget_usd")),
-        "model": get_settings().claude_model,
+        "model": get_settings().model_brief,
         "by_feature": [
             {
                 "feature": f,

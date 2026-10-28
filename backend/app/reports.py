@@ -2,6 +2,7 @@
 
 import io
 from datetime import datetime
+from pathlib import Path
 from xml.sax.saxutils import escape
 
 from openpyxl import Workbook
@@ -14,6 +15,7 @@ from reportlab.lib.units import mm
 from reportlab.platypus import KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from app.ai.grounding import fmt_usd
+from app.exports import safe_cell
 
 NAVY = colors.HexColor("#0F2A4A")
 MUTED = colors.HexColor("#5B6B7F")
@@ -203,11 +205,11 @@ def render_xlsx(report: dict) -> bytes:
     head_font, head_fill = Font(bold=True, color="FFFFFF"), PatternFill("solid", fgColor="0F2A4A")
 
     def sheet(ws, header: list[str], rows: list[list]):
-        ws.append(header)
+        ws.append([safe_cell(h) for h in header])
         for cell in ws[1]:
             cell.font, cell.fill = head_font, head_fill
         for r in rows:
-            ws.append(r)
+            ws.append([safe_cell(x) for x in r])
         for col in ws.columns:
             ws.column_dimensions[col[0].column_letter].width = min(60, max(10, *(len(str(x.value or "")) for x in col)))
 
@@ -268,3 +270,109 @@ def render_xlsx(report: dict) -> bytes:
 def filename(report: dict, ext: str) -> str:
     stamp = datetime.fromisoformat(report["content"]["generated_at"]).strftime("%Y%m%d")
     return f"market-brief-HS{report['content']['hs_code']}-{stamp}.{ext}"
+
+
+# --- company account brief (English or Arabic) ------------------------------------------------------
+
+AR_FONT = "NotoNaskhArabic"
+_FONT_PATH = Path(__file__).parent.parent / "static" / "fonts" / "NotoNaskhArabic.ttf"
+
+
+def _arabic_lines(text: str, size: float, width: float) -> list[str]:
+    """Wrap in logical order, then shape and reorder each line, so multi-line Arabic reads top-to-bottom."""
+    import arabic_reshaper
+    from bidi import get_display
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+
+    lines, cur = [], ""
+    for word in text.split():
+        trial = f"{cur} {word}".strip()
+        if cur and stringWidth(arabic_reshaper.reshape(trial), AR_FONT, size) > width:
+            lines.append(cur)
+            cur = word
+        else:
+            cur = trial
+    if cur:
+        lines.append(cur)
+    return [get_display(arabic_reshaper.reshape(line)) for line in lines]
+
+
+def _src_label(src: dict | None) -> str:
+    src = src or {}
+    return src.get("url") or src.get("title", "")
+
+
+def render_company_brief_pdf(content: dict) -> bytes:
+    from reportlab.lib.enums import TA_RIGHT
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+
+    rtl = content.get("language") == "ar"
+    if rtl and AR_FONT not in pdfmetrics.getRegisteredFontNames():
+        pdfmetrics.registerFont(TTFont(AR_FONT, str(_FONT_PATH)))
+    st = _styles()
+    buf = io.BytesIO()
+    width = A4[0] - 36 * mm
+    doc = SimpleDocTemplate(
+        buf,
+        pagesize=A4,
+        leftMargin=18 * mm,
+        rightMargin=18 * mm,
+        topMargin=16 * mm,
+        bottomMargin=18 * mm,
+        title=f"Account brief: {content['company']}",
+        author="Trade Intelligence Platform",
+    )
+
+    def para(text: str, style: str) -> list:
+        if not rtl:
+            return [Paragraph(escape(text), st[style])]
+        base = st[style]
+        s = ParagraphStyle(
+            f"ar-{style}", parent=base, fontName=AR_FONT, alignment=TA_RIGHT, leading=base.fontSize * 1.6
+        )
+        return [Paragraph(escape(line), s) for line in _arabic_lines(text, base.fontSize, width)]
+
+    els = [
+        Paragraph(escape(content["company"]), st["title"]),
+        Paragraph(
+            escape(
+                f"Generated {content['generated_at'][:16].replace('T', ' ')} UTC · model "
+                f"{content.get('model')} · prompt {content.get('prompt_version', 'n/a')} · "
+                f"language {content.get('language', 'en')}"
+            ),
+            st["meta"],
+        ),
+        Spacer(1, 6),
+    ]
+    for sec in content["sections"]:
+        els += para(sec["title"], "h2")
+        for s in sec["statements"]:
+            if s["label"] == "unverified":
+                continue
+            refs = f" [{s['label']}; {', '.join(s['evidence_ids'])}]" if s["evidence_ids"] else f" [{s['label']}]"
+            els += para(s["text"] + ("" if rtl else refs), "body")
+            if rtl:
+                els.append(Paragraph(escape(refs.strip()), st["small"]))
+    email = content.get("outreach_email") or {}
+    if email:
+        els += para("Email" if not rtl else "البريد الإلكتروني", "h2")
+        els += para(email.get("subject", ""), "body")
+        for chunk in (email.get("body") or "").split("\n"):
+            if chunk.strip():
+                els += para(chunk, "body")
+    if content.get("whatsapp_message"):
+        els += para("WhatsApp", "h2") + para(content["whatsapp_message"], "body")
+    els += [Spacer(1, 8), Paragraph("Evidence", st["h2"])]
+    rows = [["ID", "Kind", "Fact", "Source"]] + [
+        [
+            e["id"],
+            e["kind"],
+            e["text"][:400],
+            (e.get("source") or {}).get("url") or (e.get("source") or {}).get("title", ""),
+        ]
+        for e in content.get("evidence", [])
+    ]
+    els.append(_table(rows, [12 * mm, 20 * mm, 100 * mm, width - 132 * mm], st))
+    doc.build(els)
+    return buf.getvalue()

@@ -6,7 +6,9 @@ match a value in the evidence it cites. Failing statements are labelled "unverif
 """
 
 import re
+from collections import Counter
 from dataclasses import asdict, dataclass, field
+from datetime import date
 
 from sqlalchemy import any_, select
 from sqlalchemy.orm import Session
@@ -56,7 +58,11 @@ _HS_PREFIX = re.compile(r"\bHS(?:\s*code)?\s*$", re.IGNORECASE)
 _MULT = {"billion": 1e9, "bn": 1e9, "b": 1e9, "million": 1e6, "mn": 1e6, "m": 1e6, "thousand": 1e3, "k": 1e3}
 
 
+ARABIC_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹٫٬", "01234567890123456789.,")
+
+
 def extract_numbers(text: str) -> list[float]:
+    text = text.translate(ARABIC_DIGITS)  # Arabic-Indic digits count as numbers too
     out = []
     text = _DATE.sub(" ", text)  # "2026-09-25" is a date, not three quantities
     text = _OUT_OF.sub(" ", text)  # "out of 100" is a scale, not a claim
@@ -408,10 +414,79 @@ def build_company_context(db: Session, company: Company) -> list[Evidence]:
                 )
         _add_news(db, add, hs)
     _add_logistics(db, add, c.country_iso3)
-    add(
-        "gap",
-        f"No company-level shipment or purchase records exist for {c.name}: order frequency, monthly volumes "
-        "and spend are unknown.",
-        [],
-    )
+    _add_shipments(db, add, c)
     return ev
+
+
+def _add_shipments(db: Session, add, c: Company) -> None:
+    """Facts from licensed shipment files: buyer metrics, suppliers and matching catalogue products."""
+    from app.models import ImportBatch, Shipment
+    from app.services.intel import buyer_metrics
+
+    rows = db.scalars(select(Shipment).where(Shipment.consignee_company_id == c.id)).all()
+    shipped = db.scalars(select(Shipment).where(Shipment.shipper_company_id == c.id)).all()
+    if not rows and not shipped:
+        add(
+            "gap",
+            f"No shipment records for {c.name} in the uploaded provider files: order frequency, "
+            "volumes and spend are unknown.",
+            [],
+        )
+        return
+    batches = {b.id: b for b in db.scalars(select(ImportBatch))}
+    first = batches.get((rows or shipped)[0].import_batch_id)
+    src = {"url": "", "title": f"{first.provider} shipment file {first.filename} (licensed)"} if first else None
+    if rows:
+        m = buyer_metrics(rows, date.today())
+        add(
+            "shipment",
+            f"Shipment records (licensed provider data; weights as declared) show {c.name} received "
+            f"{m['shipments_12m']} shipments weighing {m['weight_kg_12m']:,.0f} kg in the last 12 months, "
+            f"in {m['active_months_12m']} different months; last shipment {m['last_shipment']}.",
+            [m["shipments_12m"], m["weight_kg_12m"], m["active_months_12m"]],
+            src,
+        )
+        if m["origins_12m"]:
+            add(
+                "shipment",
+                "Origins of its shipments in the last 12 months by weight (kg): "
+                + ", ".join(f"{k} {v:,.0f}" for k, v in m["origins_12m"].items())
+                + ".",
+                list(m["origins_12m"].values()),
+                src,
+            )
+        if m["new_origins_6m"]:
+            add(
+                "shipment",
+                f"It added supplier origins in the last 6 months: {', '.join(m['new_origins_6m'])}.",
+                [],
+                src,
+            )
+        sup = Counter(s.shipper_name for s in rows if s.shipper_name).most_common(5)
+        if sup:
+            add(
+                "shipment",
+                "Its main shippers in the records: " + "; ".join(f"{n} ({k} shipments)" for n, k in sup) + ".",
+                [k for _n, k in sup],
+                src,
+            )
+        hs6 = {s.hs6 for s in rows if s.hs6}
+        fit = db.scalars(select(Product).where(Product.hs_code.in_(hs6 or {"-"}))).all()
+        if fit:
+            add(
+                "catalogue",
+                "Our catalogue products under the HS codes it imports: "
+                + "; ".join(f"{p.name} ({p.pack_size or 'size n/a'})" for p in fit[:12])
+                + ".",
+                [],
+            )
+    if shipped:
+        buyers = Counter(s.consignee_name for s in shipped if s.consignee_name).most_common(5)
+        add(
+            "shipment",
+            f"As a shipper, {c.name} appears in {len(shipped)} shipment records; main consignees: "
+            + "; ".join(f"{n} ({k})" for n, k in buyers)
+            + ".",
+            [len(shipped), *[k for _n, k in buyers]],
+            src,
+        )

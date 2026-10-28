@@ -1,6 +1,6 @@
 import time
 from collections import defaultdict, deque
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordRequestForm
@@ -20,10 +20,17 @@ class UserOut(BaseModel):
     full_name: str
     role: str
     is_active: bool
+    language: str = "en"
 
 
 def _out(u: User) -> UserOut:
-    return UserOut(id=u.id, email=u.email, full_name=u.full_name, role=u.role, is_active=u.is_active)
+    return UserOut(
+        id=u.id, email=u.email, full_name=u.full_name, role=u.role, is_active=u.is_active, language=u.language
+    )
+
+
+class Preferences(BaseModel):
+    language: Literal["en", "ar"]
 
 
 # ponytail: in-memory limiter, fine for the single-process deployment; move to Redis if scaled out.
@@ -47,8 +54,12 @@ def login(form: Annotated[OAuth2PasswordRequestForm, Depends()], request: Reques
     user = db.scalar(select(User).where(User.email == email))
     if not user or not user.is_active or not verify_password(form.password, user.password_hash):
         FAILED[key].append(time.monotonic())
+        audit.record(db, None, "login_failed", "user", "", email[:120])
+        db.commit()
         raise HTTPException(401, "Incorrect email or password.")
     FAILED.pop(key, None)
+    audit.record(db, user, "login", "user", user.id)
+    db.commit()
     return {"access_token": create_token(user), "token_type": "bearer", "user": _out(user)}
 
 
@@ -72,6 +83,13 @@ class UserPatch(BaseModel):
 class PasswordChange(BaseModel):
     current_password: str
     new_password: str = Field(min_length=8, max_length=128)
+
+
+@router.patch("/me")
+def update_me(body: Preferences, user: CurrentUser, db: DB) -> UserOut:
+    user.language = body.language
+    db.commit()
+    return _out(user)
 
 
 @router.post("/change-password", status_code=204)

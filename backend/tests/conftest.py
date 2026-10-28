@@ -13,7 +13,7 @@ os.environ["HOME_COUNTRY_ISO3"] = ""
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
-from app import models  # noqa: E402,F401
+from app import models, ratelimit  # noqa: E402,F401
 from app.config import get_settings  # noqa: E402
 from app.db import Base, SessionLocal, engine  # noqa: E402
 from app.main import app  # noqa: E402
@@ -25,6 +25,7 @@ PASSWORD = "test-password-123"
 
 @pytest.fixture(autouse=True)
 def clean_db():
+    ratelimit._hits.clear()
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
     with SessionLocal() as db:

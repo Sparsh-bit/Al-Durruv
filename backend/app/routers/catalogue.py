@@ -9,8 +9,10 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
+from app import ratelimit
+from app.exports import safe_df
 from app.models import Entity, HSCode, HsStatus, Product, TradeObservation
-from app.security import DB, Analyst, CurrentUser
+from app.security import DB, Admin, Analyst, CurrentUser
 from app.services import audit
 from app.services.client_data import hs6_of
 
@@ -197,14 +199,16 @@ def list_products(_: CurrentUser, db: DB):
 
 
 @router.get("/products/export")
-def export_products(_: CurrentUser, db: DB):
+def export_products(user: CurrentUser, db: DB):
     valid = set(db.scalars(select(HSCode.code)))
     rows = []
     for p in db.scalars(select(Product).order_by(Product.sku)):
         row = {c: getattr(p, c) for c in EXPORT_COLUMNS}
         row["hs_issues"] = " ".join(hs_check(p, valid)["issues"])
         rows.append(row)
-    csv = pd.DataFrame(rows, columns=[*EXPORT_COLUMNS, "hs_issues"]).to_csv(index=False)
+    csv = safe_df(pd.DataFrame(rows, columns=[*EXPORT_COLUMNS, "hs_issues"])).to_csv(index=False)
+    audit.record(db, user, "export", "product", "", f"{len(rows)} rows")
+    db.commit()
     return Response(
         csv.encode("utf-8-sig"),
         media_type="text/csv",
@@ -254,6 +258,8 @@ def update_product(product_id: int, body: ProductIn, user: Analyst, db: DB):
     fields = body.fields()
     if p.client_hs_code and fields["client_hs_code"] != p.client_hs_code:
         raise HTTPException(422, "The client's HS code is kept exactly as provided and cannot be edited here.")
+    if fields["hs_code"] != p.hs_code and user.role != "admin":
+        raise HTTPException(403, "Only an administrator can change a product's HS mapping (use HS review).")
     if fields["hs_code"] != p.hs_code and fields["hs_status"] == HsStatus.confirmed:
         fields["hs_status"] = HsStatus.candidate  # a changed code must be confirmed again through review
     changed = [k for k, v in fields.items() if getattr(p, k) != v]
@@ -287,7 +293,7 @@ class HsReviewIn(BaseModel):
 
 
 @router.post("/products/{product_id}/hs-review")
-def review_hs(product_id: int, body: HsReviewIn, user: Analyst, db: DB):
+def review_hs(product_id: int, body: HsReviewIn, user: Admin, db: DB):
     """Record a reviewer's HS decision. The client's own code is never changed."""
     p = db.get(Product, product_id)
     if not p:
@@ -310,7 +316,8 @@ def review_hs(product_id: int, body: HsReviewIn, user: Analyst, db: DB):
 
 
 @router.post("/products/import")
-async def import_products(file: UploadFile, user: Analyst, db: DB):
+async def import_products(file: UploadFile, user: Admin, db: DB):
+    ratelimit.hit(f"upload:{user.id}", 10)
     data = await file.read(MAX_UPLOAD + 1)
     if len(data) > MAX_UPLOAD:
         raise HTTPException(413, "File is larger than 5 MB.")
