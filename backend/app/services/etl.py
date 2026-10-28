@@ -39,9 +39,12 @@ def run(run_id: int, connector: str, params: dict) -> None:
         r.status, r.message = "running", "Running"
         db.commit()
         try:
-            rows = _dispatch(db, connector, params)
+            skipped: list[str] = []
+            rows = _dispatch(db, connector, params, skipped)
+            r = db.get(RefreshRun, run_id)
             r.status, r.rows = "succeeded", rows
-            r.message = f"{rows} rows"
+            r.message = f"{rows} rows" + (f"; {len(skipped)} lookups skipped" if skipped else "")
+            r.error = "; ".join(skipped)[:2000]
             db.commit()
             intel.generate_alerts(db)
         except ConnectorError as exc:
@@ -59,7 +62,9 @@ def run(run_id: int, connector: str, params: dict) -> None:
             db.commit()
 
 
-def _dispatch(db, connector: str, p: dict) -> int:
+def _dispatch(db, connector: str, p: dict, skipped: list[str] | None = None) -> int:
+    """Run one connector; lookups that fail are listed in `skipped` and do not stop the rest."""
+    skipped = skipped if skipped is not None else []
     months = p.get("months") or _months_back(int(p.get("months_back", 12)))
     hs_codes = p.get("hs_codes") or []
     total = 0
@@ -79,16 +84,28 @@ def _dispatch(db, connector: str, p: dict) -> int:
         origins = p.get("origins") or ["EGY", "JOR", "SYR"]
         for hs in hs_codes:
             for market in markets:
-                if market == "USA":
-                    total += len(sources.load_usitc(db, hs))  # line rates + US-Jordan FTA; no WITS needed
+                try:
+                    if market == "USA":
+                        total += len(sources.load_usitc(db, hs))  # line rates + US-Jordan FTA; no WITS needed
+                        db.commit()
+                        continue
+                    mfn, year = sources.load_wits(db, market, hs)
+                    total += 1 if mfn else 0
+                    db.commit()
+                except ConnectorError as exc:
+                    db.rollback()
+                    skipped.append(f"{market} {hs}: {exc}")
                     continue
-                mfn, year = sources.load_wits(db, market, hs)
-                total += 1 if mfn else 0
-                if year:
-                    for origin in origins:  # one request each, for the same year as the MFN rate
+                for origin in origins if year else []:  # one request each, same year as the MFN rate
+                    try:
                         pref, _ = sources.load_wits(db, market, hs, origin, year)
                         total += 1 if pref else 0
-                db.commit()
+                        db.commit()
+                    except ConnectorError as exc:
+                        db.rollback()
+                        skipped.append(f"{market} {hs} {origin}: {exc}")
+        if skipped and not total:
+            raise ConnectorError("; ".join(skipped[:3]))
     else:
         raise ConnectorError(f"Unknown connector {connector}.")
     db.commit()

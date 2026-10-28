@@ -42,6 +42,7 @@ function OriginCard({ o, best }: { o: AccessOrigin; best: boolean }) {
               {o.duty.source.toUpperCase()} {o.duty.hs_line} {o.duty.data_year ? `· data ${o.duty.data_year}` : ''} · verified {date(o.duty.verified_at)}
               {o.duty.source_url && <SourceLink source={{ url: o.duty.source_url }} compact />}
               {o.duty.additional.length > 0 && <span className="text-amber-800">incl. additional duties</span>}
+              {o.duty.note && <span className="block text-amber-800">{o.duty.note}</span>}
             </span>
           ) : 'No tariff on file for this origin; fetch tariffs in Data admin or add an override.'}
         />

@@ -351,6 +351,7 @@ def test_landed_cost_and_best_factory(db, admin, viewer):
     db.add_all(
         [
             Tariff(importer_iso3="USA", hs_code="2002908000", rate_type="MFN", ad_valorem_pct=11.6, source="usitc"),
+            Tariff(importer_iso3="USA", hs_code="2002904000", rate_type="MFN", ad_valorem_pct=3.0, source="usitc"),
             Tariff(
                 importer_iso3="USA",
                 hs_code="2002908000",
@@ -368,6 +369,7 @@ def test_landed_cost_and_best_factory(db, admin, viewer):
     assert r["benchmark"]["usd_per_kg"] == 2.0
     egy, jor = by["EGY"], by["JOR"]
     assert egy["duty"]["rate_pct"] == pytest.approx(11.6) and jor["duty"]["rate_pct"] == 0
+    assert "highest is used" in egy["duty"]["note"] and len(egy["duty"]["lines"]) == 2
     assert egy["landed_usd_per_kg"] == pytest.approx((2 + 0.13 + 0.01) * 1.116)
     assert jor["landed_usd_per_kg"] == pytest.approx(2 + 0.17 + 0.01)
     assert r["best_origin"] == "JOR"
@@ -456,3 +458,22 @@ def test_tariff_run_makes_one_request_per_origin(db, monkeypatch):
         ("wits", "EUN", "JOR", 2022),
     ]
     assert n == 2 + 1 + 1
+
+
+def test_tariff_run_continues_past_a_failing_lookup(db, monkeypatch):
+    from app.connectors.http import ConnectorError
+    from app.services import etl
+
+    monkeypatch.setattr(sources, "load_usitc", lambda db, hs: [1])
+
+    def wits(db, market, hs, origin="", year=None):
+        if origin == "EGY":
+            raise ConnectorError("wits did not respond (ReadTimeout) after 3 attempts.")
+        return (object(), 2022)
+
+    monkeypatch.setattr(sources, "load_wits", wits)
+    skipped: list[str] = []
+    n = etl._dispatch(
+        db, "tariffs", {"hs_codes": ["200290", "200190"], "markets": ["USA", "EUN"], "origins": ["EGY", "JOR"]}, skipped
+    )
+    assert n == 2 * (1 + 1 + 1) and len(skipped) == 2 and "EGY" in skipped[0]

@@ -308,10 +308,22 @@ def _duty(db: Session, market: str, hs6: str, origin: str) -> dict | None:
         )
 
     pref = pick([t for t in rows if t.rate_type == "preferential" and t.origin_iso3 == origin])
-    mfn = pick([t for t in rows if t.rate_type == "MFN" and t.origin_iso3 in ("", origin)])
+    mfn_rows = [t for t in rows if t.rate_type == "MFN" and t.origin_iso3 in ("", origin)]
+    mfn = pick(mfn_rows)
+    if mfn and mfn.source != "override":
+        # several national lines can sit under one HS6; without the exact line, use the highest (conservative)
+        same = [
+            t
+            for t in mfn_rows
+            if t.source == mfn.source and t.data_year == mfn.data_year and t.ad_valorem_pct is not None
+        ]
+        mfn = max(same, key=lambda t: t.ad_valorem_pct) if same else mfn
+    else:
+        same = []
     base = pref if pref and pref.ad_valorem_pct is not None else mfn
     if not base:
         return None
+    rates = sorted({t.ad_valorem_pct for t in same})
     extra = [t for t in rows if t.rate_type == "additional" and t.origin_iso3 in ("", origin)]
     return {
         "rate_pct": (base.ad_valorem_pct or 0) + sum(t.ad_valorem_pct or 0 for t in extra),
@@ -324,6 +336,13 @@ def _duty(db: Session, market: str, hs6: str, origin: str) -> dict | None:
         "verified_at": base.verified_at.isoformat(),
         "additional": [{"pct": t.ad_valorem_pct, "note": t.notes, "source_url": t.source_url} for t in extra],
         "hs_line": base.hs_code,
+        "lines": [{"hs_code": t.hs_code, "pct": t.ad_valorem_pct} for t in same] if base is mfn else [],
+        "note": (
+            f"{len(same)} tariff lines under HS {hs6} ({rates[0]:g}–{rates[-1]:g}%); the highest is used. "
+            "Confirm the exact line with the customs broker."
+        )
+        if base is mfn and len(rates) > 1
+        else "",
     }
 
 

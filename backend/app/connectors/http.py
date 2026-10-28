@@ -70,8 +70,16 @@ def get_json(name: str, url: str, params: dict | None = None, *, retries: int = 
     raise ConnectorError(f"{name} did not respond ({last}) after {retries} attempts.")
 
 
+SECRET_PARAMS = {"key", "api_key", "apikey", "subscription-key", "subscription_key", "token", "access_token"}
+
+
+def _without_secrets(params: dict | None) -> dict:
+    """Drop credential parameters (exact names only: 'keyword' is a search term, not a secret)."""
+    return {k: v for k, v in (params or {}).items() if k.lower() not in SECRET_PARAMS}
+
+
 def cache_key(name: str, url: str, params: dict | None) -> str:
-    safe = {k: v for k, v in (params or {}).items() if "key" not in k.lower()}
+    safe = _without_secrets(params)
     return hashlib.sha256(json.dumps([name, url, safe], sort_keys=True, default=str).encode()).hexdigest()
 
 
@@ -92,7 +100,7 @@ def fetch_cached(db: Session, name: str, url: str, params: dict | None, ttl_hour
 
 
 def source_record(db: Session, adapter: str, url: str, params: dict, title: str, period: str, licence: str):
-    safe = {k: v for k, v in params.items() if "key" not in k.lower()}
+    safe = _without_secrets(params)
     src = SourceRecord(
         adapter=adapter,
         url=str(httpx.URL(url, params=safe)),

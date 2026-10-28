@@ -314,6 +314,8 @@ export type Duty = {
   verified_at: string
   additional: { pct: number | null; note: string; source_url: string }[]
   hs_line: string
+  lines: { hs_code: string; pct: number | null }[]
+  note: string
 }
 export type UnitValue = { usd_per_kg: number | null; year: number | null; excluded: number; source_url?: string; value_usd?: number; net_weight_kg?: number }
 export type AccessOrigin = {

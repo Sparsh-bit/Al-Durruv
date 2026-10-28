@@ -35,7 +35,7 @@ DECISIONS.md (D6–D10). Recorded real responses are in `backend/tests/fixtures/
 |---|---|---|---|---|
 | FX (Frankfurter/ECB) | succeeded | 317 daily EUR→USD rates | 1 s | |
 | Eurostat Comext DS-045409 | succeeded | 63,682 monthly rows (27 EU reporters × all partners × 14 months × 8 HS codes) | 269 s | latest month 2026-08 |
-| Tariffs (USITC + WITS) | live-verified; full run still in progress | first code: US MFN + US–Jordan FTA lines (USITC), EU MFN 17.6% (WITS, 2023 data) | ~10 min per HS code for the EU (WITS is slow) | run the remaining codes and markets from Data admin → Connectors; results are cached for 30 days |
+| Tariffs (USITC + WITS) | live-verified; first full run stopped by a WITS timeout after 5 codes (now fixed: lookups fail one at a time) | first code: US MFN + US–Jordan FTA lines (USITC), EU MFN 17.6% (WITS, 2023 data) | ~10 min per HS code for the EU (WITS is slow) | run the remaining codes and markets from Data admin → Connectors; results are cached for 30 days |
 | US Census | blocked | 0 | | needs `CENSUS_API_KEY` |
 | UN Comtrade (annual) | production already loaded | 356,723 observations, 48/48 HS codes | | from 27 Oct |
 
@@ -124,3 +124,13 @@ Extended screens:
 * The client's exact legal name for "Levant" (Jordan), the 85-country list, and HS confirmations (see the client
   workspace).
 * Approval to deploy: the migration runs on Neon at start-up.
+
+## Fixes after the first live tariff run (28 Oct 2026)
+
+* The cache key dropped any parameter whose name contained "key", so USITC `keyword` searches shared one cache
+  entry. Now only real credential names are stripped. Test added.
+* One WITS timeout aborted the whole tariff run. Each market and origin lookup now fails on its own, commits
+  separately, and is listed as skipped. Test added.
+* Several US tariff lines can sit under one HS6 (2103.90: 0–7.5%). Landed cost now uses the highest rate, lists
+  the lines and says to confirm the exact line. Test added.
+* Tests: 91 passed.
