@@ -12,12 +12,12 @@ from app.models import (
     ApiCache,
     AuditLog,
     Company,
-    Country,
     LogisticsQuote,
     RefreshRun,
     SourceRecord,
     TradeObservation,
 )
+from app.routers.client import country_index
 from app.routers.markets import _run_out
 from app.security import DB, Admin, Analyst, CurrentUser
 from app.services import audit, settings
@@ -26,7 +26,7 @@ router = APIRouter(prefix="/api", tags=["admin"])
 
 
 @router.get("/admin/sources")
-def sources(_: Admin, db: DB):
+def sources(_: CurrentUser, db: DB):
     s = get_settings()
     last = db.scalar(select(RefreshRun).where(RefreshRun.adapter == "un_comtrade").order_by(RefreshRun.id.desc()))
     return [
@@ -156,38 +156,56 @@ class ProfileIn(BaseModel):
     certifications: list[str] = Field(default_factory=list, max_length=20)
 
 
+class PrivateLabelWeights(BaseModel):
+    market_size: float = Field(ge=0, le=100)
+    growth: float = Field(ge=0, le=100)
+    retailer_presence: float = Field(ge=0, le=100)
+    private_label_signal: float = Field(ge=0, le=100)
+    evidence: float = Field(ge=0, le=100)
+
+
 class SettingsIn(BaseModel):
     company_profile: ProfileIn
-    export_markets: list[str] = Field(default_factory=list, max_length=250)
+    priority_categories: list[str] = Field(default_factory=list, max_length=30)
+    private_label_weights: PrivateLabelWeights
     ai_monthly_budget_usd: float = Field(ge=0, le=100000)
+
+
+def _settings_out(db) -> dict:
+    return {k: settings.get(db, k) for k in settings.DEFAULTS}
 
 
 @router.get("/admin/settings")
 def get_app_settings(_: CurrentUser, db: DB):
-    return {k: settings.get(db, k) for k in settings.DEFAULTS}
+    return _settings_out(db)
 
 
 @router.put("/admin/settings")
 def put_app_settings(body: SettingsIn, user: Admin, db: DB):
-    known = {c.iso3 for c in db.scalars(select(Country)) if c.iso3}
-    markets = sorted({m.strip().upper() for m in body.export_markets if m.strip()})
-    unknown = [m for m in markets if m not in known]
-    if unknown:
-        raise HTTPException(422, f"Unknown country code(s): {', '.join(unknown)}. Use ISO3 codes such as DEU or SWE.")
+    if sum(body.private_label_weights.model_dump().values()) <= 0:
+        raise HTTPException(422, "At least one opportunity weight must be above zero.")
     profile = {**body.company_profile.model_dump(), "country_iso3": body.company_profile.country_iso3.upper()}
+    categories = list(dict.fromkeys(c.strip() for c in body.priority_categories if c.strip()))
     settings.put(db, "company_profile", profile)
-    settings.put(db, "export_markets", markets)
+    settings.put(db, "priority_categories", categories)
+    settings.put(db, "private_label_weights", body.private_label_weights.model_dump())
     settings.put(db, "ai_monthly_budget_usd", body.ai_monthly_budget_usd)
     audit.record(
-        db, user, "update", "settings", "", f"{len(markets)} export markets, budget ${body.ai_monthly_budget_usd:g}"
+        db,
+        user,
+        "update",
+        "settings",
+        "",
+        f"{len(categories)} priority categories, budget ${body.ai_monthly_budget_usd:g}",
     )
     db.commit()
-    return {k: settings.get(db, k) for k in settings.DEFAULTS}
+    return _settings_out(db)
 
 
 @router.get("/countries")
 def countries(_: CurrentUser, db: DB):
-    return [{"iso3": c.iso3, "name": c.name} for c in db.scalars(select(Country).order_by(Country.name)) if c.iso3]
+    names, _lookup = country_index(db)  # one row per ISO3 (Comtrade can have several codes per country)
+    return [{"iso3": iso, "name": name} for iso, name in sorted(names.items(), key=lambda x: x[1])]
 
 
 @router.get("/admin/ai-usage")

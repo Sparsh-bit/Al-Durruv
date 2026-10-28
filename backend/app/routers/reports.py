@@ -46,6 +46,8 @@ def generate(body: GenerateIn, user: Analyst, db: DB):
     if not product:
         raise HTTPException(404, "Product not found.")
     hs = product.hs_code
+    if not hs:
+        raise HTTPException(409, "This product has no HS6 code yet. Map it in the catalogue first.")
     if not trade.overview(db, hs).get("has_data"):
         raise HTTPException(409, "Load trade statistics for this product before generating a brief.")
     ai_usage.check_budget(db)

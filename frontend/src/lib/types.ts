@@ -15,11 +15,118 @@ export type Product = {
   catalogue_page: string
   catalogue_pages: number[]
   notes: string
-  hs_code: string
-  hs_status: 'suggested' | 'confirmed'
+  hs_code: string | null
+  hs_status: HsStatus
   hs_note: string
   hs_description: string
+  client_hs_code: string
+  client_hs_source: string
+  hs_reviewed_at: string | null
+  hs_check: { client_hs6: string; matches_client: boolean; issues: string[] }
+  name_ar: string
+  ingredients: string
+  processing: string
+  manufacturing_country: string
+  export_entity_id: number | null
+  export_entity: string
+  priority_category: string
   has_trade_data: boolean
+}
+
+export type HsStatus = 'confirmed' | 'candidate' | 'insufficient_info' | 'unmapped'
+export type Identity = 'confirmed' | 'needs_confirmation' | 'unverified'
+
+export type Entity = {
+  id: number
+  name: string
+  country_iso3: string
+  role: 'manufacturer' | 'exporter' | 'both'
+  status: 'pending_verification' | 'verified' | 'rejected'
+  notes: string
+  source_note: string
+  products: number
+  created_at: string
+}
+
+export type Clarification = {
+  id: number
+  topic: 'hs' | 'product' | 'entity' | 'market' | 'competitor' | 'account' | 'general'
+  question: string
+  context: string
+  status: 'open' | 'answered' | 'closed'
+  answer: string
+  product_id: number | null
+  product: string
+  answered_at: string | null
+  created_at: string
+}
+
+export type TargetMarket = { iso3: string; name: string; segment: 'existing' | 'expansion'; regions: string[]; source: string; notes: string; updated_at: string }
+export type Region = { name: string; members: { iso3: string; name: string }[] }
+
+export type ExploreResult = {
+  hs_code: string
+  flow: 'M' | 'X'
+  partner: string
+  region: string | null
+  years: number[]
+  series: {
+    iso3: string
+    name: string
+    values: Record<string, number | null>
+    net_weight_kg: Record<string, number | null>
+    qty_unit: string
+    latest_year: number | null
+    missing_years: number[]
+    source_ids: number[]
+  }[]
+  totals: { year: number; value_usd: number | null; reporters_with_data: number; reporters: number; comparable: boolean }[]
+  latest_comparable_year: number | null
+  warnings: string[]
+  sources: Source[]
+  licence: string
+}
+
+export type PlWeights = { market_size: number; growth: number; retailer_presence: number; private_label_signal: number; evidence: number }
+export type Opportunity = {
+  category: string
+  hs_codes: string[]
+  products: number
+  iso3: string
+  segment: 'existing' | 'expansion' | 'unclassified'
+  retailer: { id: number; name: string; identity_status: Identity } | null
+  import_value_usd: number | null
+  latest_year: number | null
+  cagr: number | null
+  components: Record<keyof PlWeights, number | null>
+  missing: (keyof PlWeights)[]
+  score: number | null
+}
+export type OpportunityResult = {
+  weights: PlWeights
+  components: Record<keyof PlWeights, string>
+  rows: Opportunity[]
+  gaps: string[]
+  target_list_loaded: boolean
+  note: string | null
+}
+
+export type OverviewData = {
+  products: { total: number; by_hs_status: Record<HsStatus, number>; with_client_code: number; priority: Record<string, number> }
+  trade: {
+    catalogue_hs: number
+    loaded_hs: number
+    observations: number
+    cached_responses: number
+    oldest_retrieval: string | null
+    latest_year: number | null
+    last_run: Run | null
+  }
+  accounts: { relationship: Relationship; stage: Stage; count: number }[]
+  follow_ups: { id: number; name: string; next_action: string; follow_up_on: string }[]
+  clarifications_open: Record<string, number>
+  target_markets: Record<string, number>
+  entities: Record<string, number>
 }
 
 export type DataStatus = {
@@ -115,7 +222,7 @@ export type CountryDetail = {
   home_share: number | null
 }
 
-export type Relationship = 'buyer' | 'competitor' | 'supplier'
+export type Relationship = 'buyer' | 'retailer' | 'competitor' | 'supplier'
 export type Stage = 'identified' | 'researched' | 'contacted' | 'negotiating' | 'won' | 'lost'
 export type ScoreComponent = { label: string; normalized: number | null; weight: number; status: 'ok' | 'unavailable' }
 
@@ -139,6 +246,11 @@ export type Company = {
   prospect_score: number | null
   score_components: Record<string, ScoreComponent>
   pipeline_stage: Stage
+  identity_status: Identity
+  vendor_url: string
+  owner_id: number | null
+  next_action: string
+  follow_up_on: string | null
   notes: string
   hs_codes: string[]
   review_status: 'candidate' | 'verified' | 'rejected'
@@ -168,9 +280,15 @@ export type CompanyProfile = {
   label_languages: string[]
   certifications: string[]
 }
-export type AppSettings = { company_profile: CompanyProfile; export_markets: string[]; ai_monthly_budget_usd: number }
+export type AppSettings = {
+  company_profile: CompanyProfile
+  priority_categories: string[]
+  regions: Record<string, string[]>
+  private_label_weights: PlWeights
+  ai_monthly_budget_usd: number
+}
 
-export type Label = 'verified' | 'estimate' | 'inference' | 'unavailable' | 'unverified'
+export type Label = 'verified' | 'client_provided' | 'estimate' | 'inference' | 'unavailable' | 'unverified'
 export type Statement = { text: string; label: Label; evidence_ids: string[]; issues: string[] }
 export type Evidence = { id: string; kind: string; text: string; values: number[]; source: Source | null }
 

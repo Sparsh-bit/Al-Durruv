@@ -5,11 +5,12 @@ CompanyEvidence, Shipment) are deliberately separate tables: a national import
 figure must never be presented as a company's purchase.
 """
 
-from datetime import datetime
+from datetime import date, datetime
 from enum import StrEnum
 
 from sqlalchemy import (
     BigInteger,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -29,6 +30,13 @@ class Role(StrEnum):
     admin = "admin"
     analyst = "analyst"
     viewer = "viewer"
+
+
+class HsStatus(StrEnum):
+    confirmed = "confirmed"
+    candidate = "candidate"  # needs verification by the client or a customs broker
+    insufficient_info = "insufficient_info"
+    unmapped = "unmapped"
 
 
 class ReviewStatus(StrEnum):
@@ -72,12 +80,65 @@ class Product(Base):
     packaging: Mapped[str] = mapped_column(String(80), default="", server_default="")
     catalogue_page: Mapped[str] = mapped_column(String(40), default="", server_default="")  # e.g. "3, 5"
     notes: Mapped[str] = mapped_column(Text, default="", server_default="")
-    hs_code: Mapped[str] = mapped_column(ForeignKey("hs_codes.code"))
-    # "suggested" until a customs broker or the client confirms the classification
-    hs_status: Mapped[str] = mapped_column(String(12), default="suggested", server_default="suggested")
+    # HS6 used for trade analysis. The client's own (often national 8-10 digit) code is kept verbatim in
+    # client_hs_code and never rewritten; a reviewer confirms which HS6 applies.
+    hs_code: Mapped[str | None] = mapped_column(ForeignKey("hs_codes.code"), nullable=True)
+    hs_status: Mapped[str] = mapped_column(String(20), default=HsStatus.candidate, server_default=HsStatus.candidate)
     hs_note: Mapped[str] = mapped_column(Text, default="", server_default="")
+    client_hs_code: Mapped[str] = mapped_column(String(14), default="", server_default="")
+    client_hs_source: Mapped[str] = mapped_column(Text, default="", server_default="")
+    hs_reviewed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    hs_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    name_ar: Mapped[str] = mapped_column(String(255), default="", server_default="")
+    ingredients: Mapped[str] = mapped_column(Text, default="", server_default="")
+    processing: Mapped[str] = mapped_column(Text, default="", server_default="")
+    manufacturing_country: Mapped[str] = mapped_column(String(3), default="", server_default="")
+    export_entity_id: Mapped[int | None] = mapped_column(ForeignKey("entities.id", ondelete="SET NULL"), nullable=True)
+    priority_category: Mapped[str] = mapped_column(String(60), default="", server_default="", index=True)
     created_at: Mapped[datetime] = _now()
-    hs: Mapped[HSCode] = relationship(lazy="joined")
+    hs: Mapped[HSCode | None] = relationship(lazy="joined")
+    export_entity: Mapped["Entity | None"] = relationship(lazy="joined")
+
+
+class Entity(Base):
+    """A manufacturing or export entity of the client group (verified separately from client claims)."""
+
+    __tablename__ = "entities"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), unique=True)
+    country_iso3: Mapped[str] = mapped_column(String(3), default="")
+    role: Mapped[str] = mapped_column(String(20), default="manufacturer")  # manufacturer, exporter, both
+    status: Mapped[str] = mapped_column(String(24), default="pending_verification")
+    notes: Mapped[str] = mapped_column(Text, default="")
+    source_note: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = _now()
+
+
+class Clarification(Base):
+    """An open question for the client; answers are recorded, never assumed."""
+
+    __tablename__ = "clarifications"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    topic: Mapped[str] = mapped_column(String(20), default="general", index=True)
+    question: Mapped[str] = mapped_column(Text)
+    context: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(12), default="open", index=True)  # open, answered, closed
+    answer: Mapped[str] = mapped_column(Text, default="")
+    product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"), nullable=True)
+    answered_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    answered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = _now()
+
+
+class TargetMarket(Base):
+    """A country in the client's market list, imported from the client's file."""
+
+    __tablename__ = "target_markets"
+    iso3: Mapped[str] = mapped_column(String(3), primary_key=True)
+    segment: Mapped[str] = mapped_column(String(12), default="expansion")  # existing, expansion
+    source: Mapped[str] = mapped_column(Text, default="")
+    notes: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[datetime] = _now()
 
 
 class Country(Base):
@@ -148,6 +209,13 @@ class Company(Base):
     notes: Mapped[str] = mapped_column(Text, default="", server_default="")
     brief: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     brief_generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # confirmed: official identity verified from the company's own sources; needs_confirmation: named by
+    # the client or a source but not yet matched to a legal entity
+    identity_status: Mapped[str] = mapped_column(String(20), default="unverified", server_default="unverified")
+    vendor_url: Mapped[str] = mapped_column(Text, default="", server_default="")
+    owner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    next_action: Mapped[str] = mapped_column(Text, default="", server_default="")
+    follow_up_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = _now()
     evidence: Mapped[list["CompanyEvidence"]] = relationship(
         back_populates="company", cascade="all, delete-orphan", lazy="selectin"

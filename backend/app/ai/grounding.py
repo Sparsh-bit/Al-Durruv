@@ -13,10 +13,11 @@ from sqlalchemy.orm import Session
 
 from app.adapters.stubs import FREIGHT, SHIPMENTS
 from app.analytics import cagr
-from app.models import Company, LogisticsQuote, MarketNews, Product
+from app.models import Company, LogisticsQuote, MarketNews, Product, TargetMarket
 from app.services import settings, trade
 
-LABELS = ("verified", "estimate", "inference", "unavailable")
+LABELS = ("verified", "client_provided", "estimate", "inference", "unavailable")
+CLIENT_KINDS = ("client", "catalogue")
 REL_TOL = 0.02  # rounding tolerance, e.g. $2.40B vs 2,404,909,000
 
 
@@ -104,6 +105,8 @@ def validate_statements(statements: list[dict], evidence: list[Evidence]) -> lis
         label = s.get("label") if s.get("label") in LABELS else "inference"
         if label == "verified" and not ids:
             label = "inference"
+        if label == "client_provided" and not any(by_id[i].kind in CLIENT_KINDS for i in ids):
+            label = "inference"  # nothing from the client's own information was cited
         cited_values = [v for i in ids for v in by_id[i].values]
         bad = [n for n in extract_numbers(s.get("text", "")) if not _matches(n, cited_values)]
         if bad:
@@ -230,19 +233,50 @@ def _add_client(db: Session, add, hs: str) -> None:
             + ".",
             [x.net_quantity for x in products[:30]],
         )
-    markets = settings.get(db, "export_markets")
-    if markets:
-        add("client", f"Countries we already export to (ISO3): {', '.join(markets)}.", [])
+        statuses = sorted({x.hs_status for x in products})
+        client_codes = sorted({x.client_hs_code for x in products if x.client_hs_code})
+        add(
+            "catalogue",
+            f"HS classification status of these products: {', '.join(statuses)}. "
+            + (
+                f"Client-provided national codes: {', '.join(client_codes)}."
+                if client_codes
+                else "The client has not provided an HS code for them."
+            ),
+            [],
+        )
+        priority = sorted({x.priority_category for x in products if x.priority_category})
+        if priority:
+            add("client", f"Client priority private-label categories covered: {', '.join(priority)}.", [])
+        entities = sorted({f"{x.export_entity.name} ({x.export_entity.status})" for x in products if x.export_entity})
+        if entities:
+            add("client", f"Export/manufacturing entities named for these products: {', '.join(entities)}.", [])
+    targets = db.scalars(select(TargetMarket).order_by(TargetMarket.iso3)).all()
+    existing = [t.iso3 for t in targets if t.segment == "existing"]
+    expansion = [t.iso3 for t in targets if t.segment == "expansion"]
+    if targets:
+        add(
+            "client",
+            f"Client market list: existing markets (ISO3) {', '.join(existing) or 'none'}; "
+            f"expansion markets {', '.join(expansion) or 'none'}.",
+            [],
+        )
     else:
-        add("gap", "Our list of existing export markets has not been entered yet.", [])
+        add("gap", "The client's list of existing and expansion markets has not been imported yet.", [])
 
 
 def _add_companies(db: Session, add, hs: str) -> None:
-    labels = {"buyer": "Potential buyer", "competitor": "Competitor", "supplier": "Supplier (market supply side)"}
+    labels = {
+        "buyer": "Potential buyer",
+        "retailer": "Retailer account",
+        "competitor": "Competitor",
+        "supplier": "Supplier (market supply side)",
+    }
     for rel, label in labels.items():
+        scope = Company.relationship_type == rel if rel == "retailer" else hs == any_(Company.hs_codes)
         companies = db.scalars(
             select(Company)
-            .where(hs == any_(Company.hs_codes), Company.review_status != "rejected", Company.relationship_type == rel)
+            .where(scope, Company.review_status != "rejected", Company.relationship_type == rel)
             .order_by(Company.prospect_score.desc().nulls_last(), Company.review_status.desc(), Company.name)
             .limit(12)
         ).all()
@@ -252,7 +286,8 @@ def _add_companies(db: Session, add, hs: str) -> None:
             add(
                 "company",
                 f"{label}: {c.name} ({c.country_iso3}), business type: {', '.join(c.roles) or 'unknown'}, "
-                f"review status: {c.review_status}. {c.summary} Private label: {c.private_label}.{score}",
+                f"review status: {c.review_status}, identity: {c.identity_status}, outreach stage: "
+                f"{c.pipeline_stage}. {c.summary} Private label: {c.private_label}.{score}",
                 [c.prospect_score],
                 _src(src),
             )
@@ -314,10 +349,18 @@ def build_company_context(db: Session, company: Company) -> list[Evidence]:
     add(
         "company",
         f"{c.name} ({c.country_iso3}) is recorded as a {c.relationship_type}; business type: "
-        f"{', '.join(c.roles) or 'unknown'}; review status: {c.review_status}. {c.summary}",
+        f"{', '.join(c.roles) or 'unknown'}; review status: {c.review_status}; identity: {c.identity_status}; "
+        f"outreach stage: {c.pipeline_stage}. {c.summary}",
         [],
         _src(c.evidence[0].source) if c.evidence else None,
     )
+    if c.identity_status != "confirmed":
+        add("gap", f"{c.name}'s legal identity is not confirmed; do not attribute other companies' facts to it.", [])
+    if c.vendor_url:
+        add("company", f"Official supplier/vendor onboarding page: {c.vendor_url}", [], {"url": c.vendor_url})
+    for e in c.evidence:
+        if e.source.adapter == "official_site":
+            add("company", f"Official source: {e.claim}", [], _src(e.source))
     if c.product_range:
         add("company", f"{c.name} product range (from public sources): {c.product_range}", [])
     if c.product_fit:

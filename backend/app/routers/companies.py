@@ -1,5 +1,5 @@
 import io
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Literal
 
 import pandas as pd
@@ -11,13 +11,14 @@ from sqlalchemy import any_, select
 from app.ai import claude, usage
 from app.ai.grounding import build_company_context, extract_numbers, validate_statements
 from app.config import get_settings
-from app.models import Company, Country, HSCode, ProspectList, ProspectListItem, RefreshRun, ReviewStatus
+from app.models import Company, Country, HSCode, ProspectList, ProspectListItem, RefreshRun, ReviewStatus, User
 from app.routers.markets import _run_out
 from app.security import DB, Analyst, CurrentUser
 from app.services import audit, jobs, research
 
 router = APIRouter(prefix="/api", tags=["companies"])
-Relationship = Literal["buyer", "competitor", "supplier"]
+Relationship = Literal["buyer", "retailer", "competitor", "supplier"]
+Identity = Literal["confirmed", "needs_confirmation", "unverified"]
 Stage = Literal["identified", "researched", "contacted", "negotiating", "won", "lost"]
 
 
@@ -42,6 +43,11 @@ def company_out(c: Company, countries: dict[str, str] | None = None) -> dict:
         "prospect_score": c.prospect_score,
         "score_components": c.score_components or {},
         "pipeline_stage": c.pipeline_stage,
+        "identity_status": c.identity_status,
+        "vendor_url": c.vendor_url,
+        "owner_id": c.owner_id,
+        "next_action": c.next_action,
+        "follow_up_on": c.follow_up_on.isoformat() if c.follow_up_on else None,
         "notes": c.notes,
         "hs_codes": c.hs_codes,
         "review_status": c.review_status,
@@ -104,13 +110,23 @@ class CompanyPatch(BaseModel):
     review_status: ReviewStatus | None = None
     pipeline_stage: Stage | None = None
     relationship_type: Relationship | None = None
+    identity_status: Identity | None = None
+    vendor_url: str | None = Field(None, max_length=1000, pattern=r"^(https?://\S+)?$")
+    owner_id: int | None = None
+    next_action: str | None = Field(None, max_length=2000)
+    follow_up_on: date | None = None
     notes: str | None = Field(None, max_length=8000)
 
 
 @router.patch("/companies/{company_id}")
 def update_company(company_id: int, body: CompanyPatch, user: Analyst, db: DB):
     c = _get(db, company_id)
-    changes = body.model_dump(exclude_none=True)
+    changes = body.model_dump(exclude_unset=True)
+    for k in ("review_status", "pipeline_stage", "relationship_type", "identity_status"):
+        if k in changes and changes[k] is None:
+            changes.pop(k)  # these cannot be cleared
+    if changes.get("owner_id") is not None and not db.get(User, changes["owner_id"]):
+        raise HTTPException(422, "Unknown owner.")
     for k, v in changes.items():
         setattr(c, k, v)
     if body.review_status is not None:

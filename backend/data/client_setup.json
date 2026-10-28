@@ -1,0 +1,291 @@
+{
+  "_about": "Client-provided setup data, loaded once by `python -m app.seed` into the database. Everything here is editable in the app afterwards; the app never reads this file at runtime.",
+  "company_profile": {
+    "name": "ALDurra Food Products Co.",
+    "brand": "Durra",
+    "country_iso3": "SYR",
+    "founded": "1979",
+    "description": "Manufacturer and exporter of preserved and packaged Middle Eastern foods: jams, olives, pickles, canned beans and hummus, tahina and halawa, syrups, sauces, spices, pasta, oils and Arabic sweets. Offers private-label manufacturing.",
+    "label_languages": [
+      "Arabic",
+      "English",
+      "French",
+      "German",
+      "Swedish"
+    ],
+    "certifications": [
+      "Halal (meat products)"
+    ],
+    "source": "Durra Products Profile catalogue (client-provided PDF)"
+  },
+  "priority_categories": [
+    "Pickles",
+    "Tomato paste",
+    "Grape leaves",
+    "Sauces",
+    "Olive oil",
+    "Pomegranate",
+    "Dates & syrup"
+  ],
+  "priority_skus": {
+    "Olive oil": [
+      "DUR-OIL-001",
+      "DUR-OIL-002",
+      "DUR-OIL-003",
+      "DUR-OIL-004"
+    ],
+    "Pomegranate": [
+      "DUR-SYR-002",
+      "DUR-SYR-003"
+    ],
+    "Dates & syrup": [
+      "DUR-SYR-008",
+      "DUR-SYR-009"
+    ]
+  },
+  "regions": {
+    "Europe": [
+      "AUT",
+      "BEL",
+      "BGR",
+      "HRV",
+      "CYP",
+      "CZE",
+      "DNK",
+      "EST",
+      "FIN",
+      "FRA",
+      "DEU",
+      "GRC",
+      "HUN",
+      "IRL",
+      "ITA",
+      "LVA",
+      "LTU",
+      "LUX",
+      "MLT",
+      "NLD",
+      "POL",
+      "PRT",
+      "ROU",
+      "SVK",
+      "SVN",
+      "ESP",
+      "SWE",
+      "GBR",
+      "CHE",
+      "NOR",
+      "ISL"
+    ],
+    "USA": [
+      "USA"
+    ],
+    "Far East": [
+      "CHN",
+      "HKG",
+      "MAC",
+      "JPN",
+      "KOR",
+      "MNG",
+      "BRN",
+      "KHM",
+      "IDN",
+      "LAO",
+      "MYS",
+      "MMR",
+      "PHL",
+      "SGP",
+      "THA",
+      "VNM"
+    ]
+  },
+  "entities": [
+    {
+      "name": "Bertaya Food Industries",
+      "country_iso3": "EGY",
+      "role": "manufacturer",
+      "notes": "Named by the client as a manufacturing entity in Egypt. Legal name, registration and product scope not yet verified."
+    },
+    {
+      "name": "Lavant company",
+      "country_iso3": "JOR",
+      "role": "manufacturer",
+      "notes": "Named by the client as an entity in Jordan. Spelling (Lavant / Levant), legal name and role (manufacturer or export entity) not yet verified."
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Walmart Inc.",
+      "relationship_type": "retailer",
+      "country_iso3": "USA",
+      "website": "https://corporate.walmart.com",
+      "identity_status": "confirmed",
+      "vendor_url": "https://corporate.walmart.com/suppliers/apply-to-be-a-supplier",
+      "summary": "Retailer named by the client as a priority account.",
+      "markets_served": [
+        "USA"
+      ],
+      "facts": [
+        {
+          "claim": "Legal name is Walmart Inc.",
+          "url": "https://corporate.walmart.com/suppliers",
+          "title": "Walmart — Suppliers"
+        },
+        {
+          "claim": "New suppliers to Walmart U.S., Walmart.com and Sam's Club register through the 'Apply to be a supplier' page; Walmart Brands (own-brand) manufacturing interest is indicated during the same registration.",
+          "url": "https://corporate.walmart.com/suppliers",
+          "title": "Walmart — Suppliers"
+        },
+        {
+          "claim": "Supplier requirements are published at corporate.walmart.com/suppliers/requirements; Walmart International opportunities are described under Supplier Development.",
+          "url": "https://corporate.walmart.com/suppliers",
+          "title": "Walmart — Suppliers"
+        }
+      ],
+      "private_label": "yes",
+      "private_label_evidence": "Walmart's supplier page invites manufacturers to register interest in manufacturing Walmart Brands (own-brand products)."
+    },
+    {
+      "name": "The Kroger Co.",
+      "relationship_type": "retailer",
+      "country_iso3": "USA",
+      "website": "https://www.thekrogerco.com",
+      "identity_status": "confirmed",
+      "vendor_url": "https://www.thekrogerco.com/vendor-suppliers/supplier-hub/",
+      "summary": "Retailer named by the client as a priority account.",
+      "markets_served": [
+        "USA"
+      ],
+      "facts": [
+        {
+          "claim": "Legal name is The Kroger Co.; the vendor page lists 1014 Vine Street, Cincinnati, Ohio as its customer relations address.",
+          "url": "https://www.thekrogerco.com/vendors-suppliers/",
+          "title": "Vendor Suppliers — The Kroger Co."
+        },
+        {
+          "claim": "New vendors register as a Prospect Vendor in Supplier Hub, then complete the profile through Partner Pass; a profile is promoted to Vendor only after business is awarded.",
+          "url": "https://www.thekrogerco.com/vendor-suppliers/supplier-hub/",
+          "title": "Supplier Hub — The Kroger Co."
+        },
+        {
+          "claim": "Vendors supplying products under a Kroger brand label must accept the Our Brands Addendum to the supplier agreement.",
+          "url": "https://www.thekrogerco.com/vendor-suppliers/supplier-hub/",
+          "title": "Supplier Hub — The Kroger Co."
+        }
+      ],
+      "private_label": "yes",
+      "private_label_evidence": "Kroger's Supplier Hub requires an Our Brands Addendum from vendors supplying products under a Kroger brand label."
+    },
+    {
+      "name": "Lulu Retail Holdings PLC",
+      "relationship_type": "retailer",
+      "country_iso3": "ARE",
+      "website": "https://www.luluretail.com",
+      "identity_status": "confirmed",
+      "vendor_url": "",
+      "summary": "Retailer (Lulu Hypermarket) named by the client as a priority account. No public supplier-registration page was found on the official site; the onboarding route needs confirmation.",
+      "markets_served": [
+        "ARE",
+        "SAU",
+        "QAT",
+        "KWT",
+        "OMN",
+        "BHR"
+      ],
+      "facts": [
+        {
+          "claim": "Lulu Retail Holdings PLC started trading on the Abu Dhabi Securities Exchange (ADX) in November 2024.",
+          "url": "https://www.luluretail.com/media/news/lulu-retail-starts-trading-on-adx-following-its-record-breaking-ipo/",
+          "title": "Lulu Retail starts trading on ADX"
+        },
+        {
+          "claim": "Lulu Retail operates hypermarkets and supermarkets across the GCC countries (UAE, Saudi Arabia, Qatar, Kuwait, Oman, Bahrain).",
+          "url": "https://www.wam.ae/en/article/b66x16e-lulu-retail-starts-trading-adx",
+          "title": "WAM — Lulu Retail starts trading on ADX"
+        }
+      ],
+      "private_label": "unknown",
+      "private_label_evidence": ""
+    },
+    {
+      "name": "Hadaek Shtora",
+      "relationship_type": "competitor",
+      "country_iso3": "LBN",
+      "website": "",
+      "identity_status": "needs_confirmation",
+      "vendor_url": "",
+      "summary": "Competitor named by the client (client says Lebanon). Legal name, website and product range not yet confirmed; do not merge with similarly named companies.",
+      "markets_served": [],
+      "facts": [],
+      "private_label": "unknown",
+      "private_label_evidence": ""
+    },
+    {
+      "name": "Hiens company",
+      "relationship_type": "competitor",
+      "country_iso3": "",
+      "website": "",
+      "identity_status": "needs_confirmation",
+      "vendor_url": "",
+      "summary": "Competitor named by the client exactly as 'Hiens company'. It may refer to Heinz (The Kraft Heinz Company), but this is not confirmed; do not merge with any other record until the client confirms.",
+      "markets_served": [],
+      "facts": [],
+      "private_label": "unknown",
+      "private_label_evidence": ""
+    }
+  ],
+  "clarifications": [
+    {
+      "topic": "entity",
+      "question": "The client mentioned production in \"three countries\". Which three countries, and which entity manufactures in each?",
+      "context": "Client requirements note."
+    },
+    {
+      "topic": "product",
+      "question": "\"Molokai is made in Egypt\" — does this refer to Dried Molokhia (client list row 8, 'Dry Mellow')? Is Bertaya Food Industries the manufacturer?",
+      "context": "Client requirements note; client HS list row 8."
+    },
+    {
+      "topic": "entity",
+      "question": "Bertaya Food Industries (Egypt): provide the legal name, registration number, address and the products it manufactures for Durra.",
+      "context": "Entity pending verification."
+    },
+    {
+      "topic": "entity",
+      "question": "Lavant company (Jordan): confirm spelling and legal name, and whether it manufactures, exports, or both.",
+      "context": "Entity pending verification."
+    },
+    {
+      "topic": "competitor",
+      "question": "Hadaek Shtora: confirm the legal name, country (Lebanon?), website and which product lines compete with Durra.",
+      "context": "Competitor identity needs confirmation."
+    },
+    {
+      "topic": "competitor",
+      "question": "\"Hiens company\": is this Heinz (The Kraft Heinz Company) or a different company?",
+      "context": "Competitor identity needs confirmation."
+    },
+    {
+      "topic": "market",
+      "question": "Provide the list of 85 countries (CSV or Excel) and mark each as an existing or an expansion market.",
+      "context": "Target-market segmentation."
+    },
+    {
+      "topic": "hs",
+      "question": "The client HS list has no codes for priority products olive oil, pomegranate syrup and date syrup (and for jams, tuna, halawa, tahina, sweets, pasta and other catalogue lines). Provide the codes used on export declarations.",
+      "context": "Client HS list compared with the catalogue."
+    },
+    {
+      "topic": "account",
+      "question": "Walmart, Kroger and Lulu: which banners and countries should be targeted first (for example Walmart U.S. or Walmart International; Lulu UAE or Saudi Arabia)?",
+      "context": "Retailer account plan."
+    }
+  ],
+  "private_label_weights": {
+    "market_size": 30,
+    "growth": 20,
+    "retailer_presence": 20,
+    "private_label_signal": 15,
+    "evidence": 15
+  }
+}

@@ -20,7 +20,8 @@ def test_login_and_protection(viewer):
     assert anon.get("/api/products").status_code == 401
     assert viewer.get("/api/products").status_code == 200
     assert viewer.post("/api/products", json={"sku": "A", "name": "A", "hs_code": "190531"}).status_code == 403
-    assert viewer.get("/api/admin/sources").status_code == 403
+    assert viewer.get("/api/admin/runs").status_code == 403
+    assert viewer.get("/api/admin/sources").status_code == 200  # integration health has no secrets
 
 
 def test_admin_cannot_demote_self(admin):
@@ -53,8 +54,8 @@ def test_csv_import_reports_row_errors_and_restores_leading_zero(analyst, db):
 
 
 def test_import_rejects_missing_columns_and_bad_type(analyst):
-    r = analyst.post("/api/products/import", files={"file": ("p.csv", b"sku,name\nA,B\n", "text/csv")})
-    assert r.status_code == 422 and "hs_code" in r.json()["detail"]
+    r = analyst.post("/api/products/import", files={"file": ("p.csv", b"sku\nA\n", "text/csv")})
+    assert r.status_code == 422 and "name" in r.json()["detail"]
     assert analyst.post("/api/products/import", files={"file": ("p.txt", b"x", "text/plain")}).status_code == 415
 
 
@@ -322,7 +323,7 @@ def test_import_catalogue_columns_and_hs_status_reset(analyst, db):
         "/api/products/import", files={"file": ("c.csv", b"sku,name,hs_code\nD1,Apricot Jam,090111\n", "text/csv")}
     )
     db.expire_all()
-    assert db.scalar(select(Product.hs_status).where(Product.sku == "D1")) == "suggested"
+    assert db.scalar(select(Product.hs_status).where(Product.sku == "D1")) == "candidate"
 
 
 def test_product_validation_and_export(analyst):
@@ -507,15 +508,20 @@ def test_cost_and_budget_cap(db, analyst, ai_on):
 
 def test_settings_validation_and_export_market_flag(db, admin, analyst):
     _load(db)
+    weights = {"market_size": 30, "growth": 20, "retailer_presence": 20, "private_label_signal": 15, "evidence": 15}
     body = {
         "company_profile": {"name": "ALDurra", "brand": "Durra", "country_iso3": "syr"},
-        "export_markets": ["gbr", "XXX"],
+        "priority_categories": ["Pickles", " Pickles ", "Sauces"],
+        "private_label_weights": weights,
         "ai_monthly_budget_usd": 25,
     }
-    assert admin.put("/api/admin/settings", json=body).status_code == 422  # unknown ISO3
-    assert analyst.put("/api/admin/settings", json={**body, "export_markets": ["GBR"]}).status_code == 403
-    ok = admin.put("/api/admin/settings", json={**body, "export_markets": ["gbr"]}).json()
-    assert ok["export_markets"] == ["GBR"] and ok["company_profile"]["country_iso3"] == "SYR"
+    zero = {**body, "private_label_weights": dict.fromkeys(weights, 0)}
+    assert admin.put("/api/admin/settings", json=zero).status_code == 422
+    assert analyst.put("/api/admin/settings", json=body).status_code == 403
+    ok = admin.put("/api/admin/settings", json=body).json()
+    assert ok["priority_categories"] == ["Pickles", "Sauces"] and ok["company_profile"]["country_iso3"] == "SYR"
+    assert analyst.put("/api/target-markets/XXX", json={"segment": "existing"}).status_code == 422
+    assert analyst.put("/api/target-markets/gbr", json={"segment": "existing"}).status_code == 200
     markets = analyst.post("/api/markets/190531/ranking", json={}).json()["markets"]
     assert {m["iso3"]: m["existing_market"] for m in markets} == {"GBR": True, "DEU": False}
     log = admin.get("/api/admin/audit").json()

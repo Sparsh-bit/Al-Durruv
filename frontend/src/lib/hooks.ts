@@ -15,7 +15,7 @@ export function useProduct() {
   })
 }
 
-export function useOverview(hs: string | undefined) {
+export function useOverview(hs: string | null | undefined) {
   return useQuery({
     queryKey: ['overview', hs],
     queryFn: () => api<Overview>(`/api/markets/${hs}/overview`),

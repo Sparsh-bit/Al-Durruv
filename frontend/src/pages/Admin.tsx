@@ -35,8 +35,8 @@ function NewUser({ onDone }: { onDone: () => void }) {
     <form onSubmit={submit} className="space-y-4">
       <Field label="Full name"><Input value={f.full_name} onChange={(e) => setF({ ...f, full_name: e.target.value })} /></Field>
       <Field label="Email"><Input type="email" required value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} /></Field>
-      <Field label="Temporary password" hint="At least 10 characters. Share it securely.">
-        <Input type="password" required minLength={10} autoComplete="new-password" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} />
+      <Field label="Temporary password" hint="At least 8 characters. Share it securely.">
+        <Input type="password" required minLength={8} autoComplete="new-password" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} />
       </Field>
       <Field label="Role">
         <Select value={f.role} onChange={(e) => setF({ ...f, role: e.target.value as Role })}>
@@ -76,13 +76,13 @@ function SettingsCard() {
   const current = useQuery({ queryKey: ['app-settings'], queryFn: () => api<AppSettings>('/api/admin/settings') })
   const countries = useQuery({ queryKey: ['countries'], queryFn: () => api<{ iso3: string; name: string }[]>('/api/countries') })
   const [draft, setDraft] = useState<AppSettings | null>(null)
-  const [pick, setPick] = useState('')
   const s = draft ?? current.data
   const save = useMutation({
     mutationFn: (body: AppSettings) => put<AppSettings>('/api/admin/settings', body),
     onSuccess: (r) => {
       qc.setQueryData(['app-settings'], r)
-      qc.invalidateQueries({ queryKey: ['ranking'] })
+      qc.invalidateQueries({ queryKey: ['settings'] })
+      qc.invalidateQueries({ queryKey: ['opportunities'] })
       setDraft(null)
       toast.success('Settings saved')
     },
@@ -91,20 +91,13 @@ function SettingsCard() {
   const names = new Map((countries.data ?? []).map((c) => [c.iso3, c.name]))
   const setProfile = (k: keyof CompanyProfile) => (e: { target: { value: string } }) =>
     setDraft({ ...s, company_profile: { ...s.company_profile, [k]: e.target.value } })
-  const addMarkets = (raw: string) => {
-    const codes = raw.split(/[\s,;]+/).map((x) => x.trim().toUpperCase()).filter(Boolean)
-    const byName = new Map((countries.data ?? []).map((c) => [c.name.toUpperCase(), c.iso3]))
-    const resolved = codes.map((c) => (names.has(c) ? c : byName.get(c) ?? c))
-    setDraft({ ...s, export_markets: [...new Set([...s.export_markets, ...resolved])].sort() })
-    setPick('')
-  }
   const submit = (e: FormEvent) => {
     e.preventDefault()
     save.mutate(s)
   }
   return (
     <Card className="mb-8">
-      <CardHeader title="Company profile and markets" subtitle="Used by the AI to judge product fit and by the market ranking to separate existing from new markets." />
+      <CardHeader title="Client profile and scoring" subtitle="Used by the AI to judge product fit and by the private-label opportunity engine." />
       <form onSubmit={submit} className="space-y-5 p-5">
         <div className="grid gap-4 sm:grid-cols-3">
           <Field label="Company name"><Input required value={s.company_profile.name} onChange={setProfile('name')} /></Field>
@@ -125,36 +118,27 @@ function SettingsCard() {
             <Input type="number" min={0} step="1" value={s.ai_monthly_budget_usd} onChange={(e) => setDraft({ ...s, ai_monthly_budget_usd: Number(e.target.value) })} />
           </Field>
         </div>
-        <div>
-          <div className="mb-1.5 text-[13px] font-medium text-slate-700">Countries we already export to ({s.export_markets.length})</div>
-          <div className="flex flex-wrap gap-2">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Priority private-label categories" hint="Comma separated. Products are tagged with these in the catalogue.">
             <Input
-              className="max-w-sm"
-              list="country-options"
-              value={pick}
-              onChange={(e) => setPick(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault()
-                  addMarkets(pick)
-                }
-              }}
-              placeholder="Type a country or paste ISO3 codes (DEU, SWE, …)"
-              aria-label="Add export market"
+              value={s.priority_categories.join(', ')}
+              onChange={(e) => setDraft({ ...s, priority_categories: e.target.value.split(',').map((x) => x.trimStart()) })}
+              onBlur={() => setDraft({ ...s, priority_categories: s.priority_categories.map((x) => x.trim()).filter(Boolean) })}
             />
-            <datalist id="country-options">{(countries.data ?? []).map((c) => <option key={c.iso3} value={c.iso3}>{c.name}</option>)}</datalist>
-            <Button variant="secondary" onClick={() => addMarkets(pick)} disabled={!pick.trim()}>Add</Button>
-          </div>
-          {s.export_markets.length > 0 && (
-            <div className="mt-3 flex flex-wrap gap-1.5">
-              {s.export_markets.map((m) => (
-                <button key={m} type="button" onClick={() => setDraft({ ...s, export_markets: s.export_markets.filter((x) => x !== m) })} className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-700 hover:bg-red-50 hover:text-red-700" title="Remove">
-                  <span className="font-mono font-semibold">{m}</span> {names.get(m) ?? 'unknown code'} ×
-                </button>
+          </Field>
+          <div>
+            <div className="mb-1.5 text-[13px] font-medium text-ink-800">Private-label opportunity weights</div>
+            <div className="grid grid-cols-5 gap-2">
+              {(Object.keys(s.private_label_weights) as (keyof AppSettings['private_label_weights'])[]).map((k) => (
+                <label key={k} className="block">
+                  <span className="micro mb-1 block truncate text-muted" title={k.replace(/_/g, ' ')}>{k.replace(/_/g, ' ')}</span>
+                  <Input type="number" min={0} max={100} value={s.private_label_weights[k]} onChange={(e) => setDraft({ ...s, private_label_weights: { ...s.private_label_weights, [k]: Number(e.target.value) } })} />
+                </label>
               ))}
             </div>
-          )}
+          </div>
         </div>
+        <p className="text-xs text-muted">Existing and expansion markets and regions are managed on the Markets &amp; regions page.</p>
         <div className="flex justify-end gap-2 border-t border-line pt-4">
           {draft && <Button variant="secondary" onClick={() => setDraft(null)}>Discard</Button>}
           <Button type="submit" disabled={!draft} loading={save.isPending}>Save settings</Button>

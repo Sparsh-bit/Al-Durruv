@@ -3,9 +3,9 @@ import { usd } from '../lib/format'
 
 // Validated categorical order (see dataviz reference palette); color follows the entity.
 const SERIES = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#6250d6', '#e34948']
-const BAR = '#0f766e'
-const AXIS = { fontSize: 11, fill: '#5b6b7f' }
-const GRID = '#eef1f6'
+const BAR = '#20736e'
+const AXIS = { fontSize: 11, fill: '#5f696b', fontFamily: 'IBM Plex Mono' }
+const GRID = '#eef1f2'
 
 type TipPayload = { name?: string; value?: number; color?: string; payload?: Record<string, unknown> }
 
@@ -63,7 +63,7 @@ export function YearBars({ data, height = 240 }: { data: { year: number; value_u
   )
 }
 
-export function TrendLines({ series, height = 260 }: { series: { name: string; series: { year: number; value_usd: number }[] }[]; height?: number }) {
+export function TrendLines({ series, height = 260, gaps = false }: { series: { name: string; series: { year: number; value_usd: number }[] }[]; height?: number; gaps?: boolean }) {
   const years = [...new Set(series.flatMap((s) => s.series.map((p) => p.year)))].sort()
   const data = years.map((year) => {
     const row: Record<string, number> = { year }
@@ -90,7 +90,7 @@ export function TrendLines({ series, height = 260 }: { series: { name: string; s
             strokeWidth={2}
             dot={{ r: 3, strokeWidth: 2, fill: '#fff' }}
             activeDot={{ r: 5, stroke: '#fff', strokeWidth: 2 }}
-            connectNulls
+            connectNulls={!gaps}
             isAnimationActive={false}
           />
         ))}

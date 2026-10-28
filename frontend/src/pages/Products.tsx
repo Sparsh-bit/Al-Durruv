@@ -10,7 +10,8 @@ import { Badge, Button, Card, EmptyState, Input, Modal, Notice, PageHeader, Sele
 import { api, del, download, post } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { pageImage } from '../lib/format'
-import type { DataStatus, Product } from '../lib/types'
+import { HS_STATUS } from '../lib/labels'
+import type { DataStatus, HsStatus, Product } from '../lib/types'
 
 type ImportResult = { created: number; updated: number; errors: { line: number; error: string }[] }
 
@@ -33,8 +34,8 @@ function ImportDialog({ onDone }: { onDone: () => void }) {
   })
   const template = () => {
     const csv =
-      'sku,name,brand,category,hs_code,pack_size,net_quantity,net_unit,packaging,catalogue_page,description\n' +
-      'DUR-JAM-001,Apricot Fruit Spread,Durra,Fruit Jams & Spreads,200799,430 g,430,g,Glass jar,2,Apricot fruit spread\n'
+      'sku,name,name_ar,brand,category,priority_category,client_hs_code,hs_code,pack_size,net_quantity,net_unit,packaging,catalogue_page,description,ingredients,processing,manufacturing_country\n' +
+      'SKU-001,Example product,,,Example collection,,2001900020,200190,500 g,500,g,Glass jar,,Short description,,In vinegar,\n'
     const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([csv], { type: 'text/csv' })), download: 'product-template.csv' })
     a.click()
     setTimeout(() => URL.revokeObjectURL(a.href), 1000)
@@ -42,9 +43,11 @@ function ImportDialog({ onDone }: { onDone: () => void }) {
   return (
     <div className="space-y-4">
       <Notice>
-        Upload a <b>.csv</b> or <b>.xlsx</b> file. Required columns: <code>sku</code>, <code>name</code>, <code>hs_code</code>. Optional: <code>brand</code>,{' '}
-        <code>category</code>, <code>pack_size</code>, <code>net_quantity</code>, <code>net_unit</code>, <code>packaging</code>, <code>catalogue_page</code>,{' '}
-        <code>description</code>, <code>hs_status</code>, <code>hs_note</code>, <code>notes</code>. Existing SKUs are updated.
+        Upload a <b>.csv</b> or <b>.xlsx</b> file. Required columns: <code>sku</code>, <code>name</code>. Optional: <code>hs_code</code> (HS6 for analysis),{' '}
+        <code>client_hs_code</code> (kept exactly as given), <code>name_ar</code>, <code>brand</code>, <code>category</code>, <code>priority_category</code>,{' '}
+        <code>pack_size</code>, <code>net_quantity</code>, <code>net_unit</code>, <code>packaging</code>, <code>catalogue_page</code>, <code>description</code>,{' '}
+        <code>ingredients</code>, <code>processing</code>, <code>manufacturing_country</code>, <code>hs_status</code>, <code>hs_note</code>, <code>notes</code>.
+        Existing SKUs are updated; a client code already on file is never overwritten.
       </Notice>
       <button
         type="button"
@@ -120,7 +123,7 @@ function CoveragePanel() {
             <Database className="size-4 text-brand-700" /> Trade statistics coverage
           </div>
           <p className="mt-0.5 text-[13px] text-muted">
-            UN Comtrade data loaded for <b className="tabular text-slate-800">{d.loaded}</b> of <b className="tabular text-slate-800">{d.hs_codes}</b> HS codes used by your catalogue.
+            UN Comtrade data loaded for <b className="tabular text-ink-800">{d.loaded}</b> of <b className="tabular text-ink-800">{d.hs_codes}</b> HS codes used by your catalogue.
             {running && <> HS {running.hs_code}: {running.message}{queued ? ` · ${queued} queued` : ''}.</>}
           </p>
           <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label="Trade data coverage">
@@ -157,6 +160,8 @@ export default function Products() {
   const [filter, setFilter] = useState('')
   const [category, setCategory] = useState('')
   const [hsStatus, setHsStatus] = useState('')
+  const [priority, setPriority] = useState('')
+  const [issuesOnly, setIssuesOnly] = useState(false)
   const exp = useMutation({ mutationFn: () => download('/api/products/export') })
   const remove = useMutation({
     mutationFn: (p: Product) => del(`/api/products/${p.id}`),
@@ -181,14 +186,18 @@ export default function Products() {
       (p) =>
         (!category || (p.category || 'Uncategorised') === category) &&
         (!hsStatus || p.hs_status === hsStatus) &&
-        (!f || `${p.name} ${p.sku} ${p.hs_code} ${p.category} ${p.pack_size} ${p.packaging}`.toLowerCase().includes(f)),
+        (!priority || (priority === '*' ? Boolean(p.priority_category) : p.priority_category === priority)) &&
+        (!issuesOnly || p.hs_check.issues.some((i) => !i.startsWith('Client code has'))) &&
+        (!f || `${p.name} ${p.name_ar} ${p.sku} ${p.hs_code ?? ''} ${p.client_hs_code} ${p.category} ${p.pack_size} ${p.packaging}`.toLowerCase().includes(f)),
     )
     const m = new Map<string, Product[]>()
     for (const p of rows) m.set(p.category || 'Uncategorised', [...(m.get(p.category || 'Uncategorised') ?? []), p])
     return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]))
-  }, [all, filter, category, hsStatus])
+  }, [all, filter, category, hsStatus, priority, issuesOnly])
   const shown = groups.reduce((n, [, ps]) => n + ps.length, 0)
-  const hsCount = new Set(all.map((p) => p.hs_code)).size
+  const hsCount = new Set(all.map((p) => p.hs_code).filter(Boolean)).size
+  const priorities = [...new Set(all.map((p) => p.priority_category).filter(Boolean))].sort()
+  const statusCounts = all.reduce<Record<string, number>>((m, p) => ({ ...m, [p.hs_status]: (m[p.hs_status] ?? 0) + 1 }), {})
   const brands = [...new Set(all.map((p) => p.brand).filter(Boolean))]
   const current = viewing ? (all.find((p) => p.id === viewing.id) ?? viewing) : null
 
@@ -220,7 +229,7 @@ export default function Products() {
       <Card>
         <div className="flex flex-wrap items-center gap-3 border-b border-line px-5 py-3">
           <div className="relative w-full max-w-xs">
-            <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-400" />
+            <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted" />
             <Input className="pl-9" placeholder="Search name, SKU, HS code…" value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Search products" />
           </div>
           <Select className="w-auto!" value={category} onChange={(e) => setCategory(e.target.value)} aria-label="Filter by collection">
@@ -231,9 +240,19 @@ export default function Products() {
           </Select>
           <Select className="w-auto!" value={hsStatus} onChange={(e) => setHsStatus(e.target.value)} aria-label="Filter by HS status">
             <option value="">Any HS status</option>
-            <option value="suggested">Suggested HS code</option>
-            <option value="confirmed">Confirmed HS code</option>
+            {(Object.keys(HS_STATUS) as HsStatus[]).map((st) => (
+              <option key={st} value={st}>{HS_STATUS[st].text} ({statusCounts[st] ?? 0})</option>
+            ))}
           </Select>
+          <Select className="w-auto!" value={priority} onChange={(e) => setPriority(e.target.value)} aria-label="Filter by priority category">
+            <option value="">All categories</option>
+            <option value="*">Any priority category</option>
+            {priorities.map((c) => <option key={c} value={c}>{c}</option>)}
+          </Select>
+          <label className="flex items-center gap-2 text-[13px] text-ink-800">
+            <input type="checkbox" className="size-4 accent-ink-900" checked={issuesOnly} onChange={(e) => setIssuesOnly(e.target.checked)} />
+            HS issues only
+          </label>
           <span className="ml-auto text-xs text-muted">{shown} shown</span>
         </div>
         {products.isLoading ? (
@@ -249,23 +268,24 @@ export default function Products() {
             <table className="w-full min-w-[860px] text-left text-sm">
               <thead>
                 <tr className="text-[11.5px] font-semibold tracking-wide text-muted uppercase">
-                  <th className="w-16 border-b border-line bg-slate-50/80 px-4 py-2.5"><span className="sr-only">Image</span></th>
-                  <th className="border-b border-line bg-slate-50/80 px-4 py-2.5">Product</th>
-                  <th className="border-b border-line bg-slate-50/80 px-4 py-2.5">Pack</th>
-                  <th className="border-b border-line bg-slate-50/80 px-4 py-2.5">HS code</th>
-                  <th className="border-b border-line bg-slate-50/80 px-4 py-2.5">Trade data</th>
-                  <th className="border-b border-line bg-slate-50/80 px-4 py-2.5 text-right"><span className="sr-only">Actions</span></th>
+                  <th className="w-16 border-b border-line bg-paper px-4 py-2.5"><span className="sr-only">Image</span></th>
+                  <th className="border-b border-line bg-paper px-4 py-2.5">Product</th>
+                  <th className="border-b border-line bg-paper px-4 py-2.5">Pack</th>
+                  <th className="border-b border-line bg-paper px-4 py-2.5">Client code</th>
+                  <th className="border-b border-line bg-paper px-4 py-2.5">HS6 (analysis)</th>
+                  <th className="border-b border-line bg-paper px-4 py-2.5">Trade data</th>
+                  <th className="border-b border-line bg-paper px-4 py-2.5 text-right"><span className="sr-only">Actions</span></th>
                 </tr>
               </thead>
               {groups.map(([cat, ps]) => (
                 <tbody key={cat}>
                   <tr>
-                    <th colSpan={6} scope="colgroup" className="border-b border-line bg-ink-900/[0.03] px-4 py-2 text-[12.5px] font-semibold text-ink-800">
+                    <th colSpan={7} scope="colgroup" className="border-b border-line bg-ink-900/[0.03] px-4 py-2 text-[12.5px] font-semibold text-ink-800">
                       {cat} <span className="ml-1 font-normal text-muted">· {ps.length}</span>
                     </th>
                   </tr>
                   {ps.map((p) => (
-                    <tr key={p.id} className="cursor-pointer hover:bg-slate-50/70" onClick={() => setViewing(p)}>
+                    <tr key={p.id} className="cursor-pointer hover:bg-paper" onClick={() => setViewing(p)}>
                       <td className="border-b border-line/70 px-4 py-2">
                         {p.catalogue_pages[0] ? (
                           <img src={pageImage(p.catalogue_pages[0], true)} alt="" loading="lazy" className="h-14 w-10 rounded border border-line object-cover" />
@@ -274,17 +294,27 @@ export default function Products() {
                         )}
                       </td>
                       <td className="border-b border-line/70 px-4 py-2">
-                        <div className="font-medium text-slate-900">{p.name}</div>
-                        <div className="text-xs text-muted">{p.sku}{p.notes && <span className="ml-2 text-amber-700" title={p.notes}>· catalogue note</span>}</div>
+                        <div className="font-medium text-ink-900">{p.name}</div>
+                        <div className="text-xs text-muted">
+                          {p.sku}
+                          {p.name_ar && <span className="ml-2" dir="rtl" lang="ar">{p.name_ar}</span>}
+                        </div>
+                        {p.priority_category && <Badge tone="teal" className="mt-1">{p.priority_category}</Badge>}
                       </td>
                       <td className="border-b border-line/70 px-4 py-2">
-                        <div className="text-slate-800">{p.pack_size || '—'}</div>
+                        <div className="text-ink-800">{p.pack_size || '—'}</div>
                         <div className="text-xs text-muted">{p.packaging}</div>
                       </td>
                       <td className="border-b border-line/70 px-4 py-2">
+                        <span className="num text-[12.5px] text-ink-800">{p.client_hs_code || <span className="text-muted">—</span>}</span>
+                      </td>
+                      <td className="border-b border-line/70 px-4 py-2">
                         <div className="flex items-center gap-2">
-                          <span className="font-mono text-[13px] font-semibold text-ink-800">{p.hs_code}</span>
+                          <span className="num text-[13px] text-ink-900">{p.hs_code ?? '——'}</span>
                           <HsStatusBadge status={p.hs_status} />
+                          {p.hs_check.issues.some((i) => !i.startsWith('Client code has')) && (
+                            <span className="size-1.5 rounded-full bg-amber-500" title={p.hs_check.issues.join(' ')} aria-label="HS issue" />
+                          )}
                         </div>
                         <div className="line-clamp-1 max-w-56 text-xs text-muted" title={p.hs_description}>{p.hs_description}</div>
                       </td>
@@ -299,12 +329,14 @@ export default function Products() {
                             <Button variant="ghost" size="sm" aria-label={`Delete ${p.name}`} onClick={() => setConfirm(p)}><Trash2 className="size-4" /></Button>
                           </>
                         )}
-                        <Link
-                          to={`/p/${p.id}/markets`}
-                          className={clsx('ml-2 inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-[13px] font-medium', 'bg-ink-900 text-white hover:bg-ink-800')}
-                        >
-                          Open <ArrowRight className="size-3.5" />
-                        </Link>
+                        {p.hs_code && (
+                          <Link
+                            to={`/p/${p.id}/markets`}
+                            className={clsx('ml-2 inline-flex h-8 items-center gap-1.5 rounded-[9px] px-3 text-[13px] font-medium', 'bg-ink-900 text-white hover:bg-ink-700')}
+                          >
+                            Open <ArrowRight className="size-3.5" />
+                          </Link>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -317,7 +349,7 @@ export default function Products() {
 
       <ProductDrawer
         product={current}
-        siblings={current ? all.filter((p) => p.hs_code === current.hs_code && p.id !== current.id) : []}
+        siblings={current?.hs_code ? all.filter((p) => p.hs_code === current.hs_code && p.id !== current.id) : []}
         onClose={() => setViewing(null)}
         onEdit={(p) => {
           setViewing(null)

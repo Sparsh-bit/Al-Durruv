@@ -5,7 +5,14 @@ import { Spinner } from './components/ui'
 import { useAuth } from './lib/auth'
 import Login from './pages/Login'
 
+const Overview = lazy(() => import('./pages/Overview'))
 const Products = lazy(() => import('./pages/Products'))
+const Explorer = lazy(() => import('./pages/Explorer'))
+const MarketsRegions = lazy(() => import('./pages/MarketsRegions'))
+const Opportunities = lazy(() => import('./pages/Opportunities'))
+const Accounts = lazy(() => import('./pages/Accounts'))
+const ClientWorkspace = lazy(() => import('./pages/ClientWorkspace'))
+const Integrations = lazy(() => import('./pages/Integrations'))
 const Markets = lazy(() => import('./pages/Markets'))
 const Companies = lazy(() => import('./pages/Companies'))
 const Analyst = lazy(() => import('./pages/Analyst'))
@@ -27,7 +34,7 @@ function Protected({ children }: { children: ReactNode }) {
 
 function AdminOnly({ children }: { children: ReactNode }) {
   const { can } = useAuth()
-  return can('admin') ? children : <Navigate to="/products" replace />
+  return can('admin') ? children : <Navigate to="/" replace />
 }
 
 function FullPageSpinner() {
@@ -50,8 +57,14 @@ export default function App() {
             </Protected>
           }
         >
-          <Route index element={<Navigate to="/products" replace />} />
+          <Route index element={<Overview />} />
           <Route path="products" element={<Products />} />
+          <Route path="explorer" element={<Explorer />} />
+          <Route path="markets" element={<MarketsRegions />} />
+          <Route path="opportunities" element={<Opportunities />} />
+          <Route path="accounts" element={<Accounts />} />
+          <Route path="client" element={<ClientWorkspace />} />
+          <Route path="integrations" element={<Integrations />} />
           <Route path="p/:productId">
             <Route index element={<Navigate to="markets" replace />} />
             <Route path="markets" element={<Markets />} />

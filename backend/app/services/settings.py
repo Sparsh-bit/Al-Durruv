@@ -1,7 +1,7 @@
-"""Admin-editable settings stored in the database, with defaults.
+"""Admin-editable settings stored in the database, with neutral defaults.
 
-The company profile defaults come from the client's catalogue (Durra Products Profile 2023) and are
-editable in Administration.
+Client-specific values (company profile, priority categories, regions) are loaded from
+data/client_setup.json by the seed and edited in Administration; nothing client-specific lives in code.
 """
 
 from datetime import UTC, datetime
@@ -14,18 +14,24 @@ from app.models import AppSetting
 
 DEFAULTS: dict = {
     "company_profile": {
-        "name": "ALDurra Food Products Co.",
-        "brand": "Durra",
-        "country_iso3": "SYR",
-        "founded": "1979",
-        "description": "Manufacturer and exporter of preserved and packaged Middle Eastern foods: jams, olives, "
-        "pickles, canned beans and hummus, tahina and halawa, syrups, sauces, spices, pasta, oils and Arabic "
-        "sweets. Offers private-label manufacturing.",
-        "label_languages": ["Arabic", "English", "French", "German", "Swedish"],
-        "certifications": ["Halal (meat products)"],
+        "name": "",
+        "brand": "",
+        "country_iso3": "",
+        "founded": "",
+        "description": "",
+        "label_languages": [],
+        "certifications": [],
     },
-    "export_markets": [],  # ISO3 codes of countries the client already exports to
-    "ai_monthly_budget_usd": 20.0,
+    "priority_categories": [],
+    "regions": {},  # region name -> ISO3 members
+    "private_label_weights": {
+        "market_size": 30,
+        "growth": 20,
+        "retailer_presence": 20,
+        "private_label_signal": 15,
+        "evidence": 15,
+    },
+    "ai_monthly_budget_usd": 8.0,
 }
 
 
@@ -36,6 +42,11 @@ def get(db: Session, key: str):
     if key == "company_profile" and get_settings().home_country_iso3:
         return {**DEFAULTS[key], "country_iso3": get_settings().home_country_iso3.upper()}
     return DEFAULTS[key]
+
+
+def get_raw(db: Session, key: str):
+    row = db.get(AppSetting, key)
+    return row.value if row is not None else None
 
 
 def put(db: Session, key: str, value) -> None:

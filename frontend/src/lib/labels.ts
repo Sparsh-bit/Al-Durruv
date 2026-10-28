@@ -1,10 +1,11 @@
-import type { Label, Relationship, Stage } from './types'
+import type { HsStatus, Identity, Label, Relationship, Stage } from './types'
 
 export const LABEL_META: Record<Label, { text: string; tone: 'green' | 'amber' | 'blue' | 'slate' | 'red'; help: string }> = {
-  verified: { text: 'Verified', tone: 'green', help: 'Directly stated by the cited data source.' },
-  estimate: { text: 'Estimate', tone: 'amber', help: 'A labelled estimate or client-provided figure.' },
-  inference: { text: 'Inference', tone: 'blue', help: 'Analyst reasoning based on the cited evidence; no new numbers.' },
-  unavailable: { text: 'Unavailable', tone: 'slate', help: 'The data needed is not available from connected sources.' },
+  verified: { text: 'Sourced fact', tone: 'green', help: 'Stated by a cited external source (UN Comtrade, an official company page, an article).' },
+  client_provided: { text: 'Client-provided', tone: 'blue', help: "From the client's own information (profile, catalogue, HS list). Not independently verified." },
+  estimate: { text: 'Estimate', tone: 'amber', help: 'A modelled figure that the evidence marks as an estimate.' },
+  inference: { text: 'Hypothesis', tone: 'slate', help: 'Reasoning or a recommendation based on the cited evidence. Adds no new numbers.' },
+  unavailable: { text: 'Unknown', tone: 'slate', help: 'The data needed is not in any connected source.' },
   unverified: { text: 'Unverified', tone: 'red', help: 'Failed automatic checks (a number did not match its evidence). Excluded from exports.' },
 }
 
@@ -16,7 +17,25 @@ export const STAGES: { key: Stage; label: string }[] = [
   { key: 'won', label: 'Won' },
   { key: 'lost', label: 'Lost' },
 ]
-export const RELATIONSHIP_LABEL: Record<Relationship, string> = { buyer: 'Potential buyer', competitor: 'Competitor', supplier: 'Supplier' }
+export const RELATIONSHIP_LABEL: Record<Relationship, string> = {
+  buyer: 'Potential buyer',
+  retailer: 'Retailer account',
+  competitor: 'Competitor',
+  supplier: 'Supplier',
+}
+
+export const HS_STATUS: Record<HsStatus, { text: string; tone: 'green' | 'amber' | 'red' | 'slate'; help: string }> = {
+  confirmed: { text: 'Confirmed', tone: 'green', help: 'A reviewer confirmed this HS6 code for trade analysis.' },
+  candidate: { text: 'Candidate', tone: 'amber', help: 'Needs verification by the client or a customs broker.' },
+  insufficient_info: { text: 'Insufficient info', tone: 'red', help: 'The product description is not enough to classify it. See the open question.' },
+  unmapped: { text: 'Unmapped', tone: 'slate', help: 'No HS6 code is assigned yet.' },
+}
+
+export const IDENTITY: Record<Identity, { text: string; tone: 'green' | 'amber' | 'slate' }> = {
+  confirmed: { text: 'Identity confirmed', tone: 'green' },
+  needs_confirmation: { text: 'Identity needs confirmation', tone: 'amber' },
+  unverified: { text: 'Identity unverified', tone: 'slate' },
+}
 export const PL_META = {
   yes: { tone: 'green', text: 'Private label: evidence' },
   possible: { tone: 'amber', text: 'Private label: possible' },

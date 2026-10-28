@@ -1,15 +1,19 @@
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+import pandas as pd
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
+from app.adapters import comtrade
 from app.ai import usage
 from app.analytics import COMPONENT_LABELS, DEFAULT_WEIGHTS
 from app.config import get_settings
-from app.models import HSCode, MarketNews, Product, RefreshRun, TradeObservation
+from app.models import HSCode, MarketNews, Product, RefreshRun, TargetMarket, TradeObservation
 from app.security import DB, Analyst, CurrentUser
-from app.services import audit, jobs, research, settings, trade
+from app.services import audit, explore, jobs, opportunities, research, trade
 
 router = APIRouter(prefix="/api/markets", tags=["markets"])
 
@@ -72,7 +76,7 @@ def _coverage(db) -> dict[str, tuple[str, RefreshRun | None]]:
     queued/running row is genuinely active."""
     has_data = set(db.scalars(select(TradeObservation.hs_code).distinct()))
     out = {}
-    for hs in sorted(set(db.scalars(select(Product.hs_code).distinct()))):
+    for hs in sorted(set(db.scalars(select(Product.hs_code).where(Product.hs_code.is_not(None)).distinct()))):
         r = latest_run(db, hs)
         if jobs.is_live(r):
             state = "active"
@@ -145,15 +149,84 @@ def ranking(hs: str, weights: Weights, _: CurrentUser, db: DB):
     w = weights.model_dump()
     if sum(w.values()) <= 0:
         raise HTTPException(422, "At least one weight must be above zero.")
-    ours = set(settings.get(db, "export_markets"))
-    markets = [{**m, "existing_market": m["iso3"] in ours} for m in trade.ranking(db, hs, w)]
+    segments = {t.iso3: t.segment for t in db.scalars(select(TargetMarket))}
+    markets = [
+        {**m, "segment": segments.get(m["iso3"]), "existing_market": segments.get(m["iso3"]) == "existing"}
+        for m in trade.ranking(db, hs, w)
+    ]
     return {
         "weights": w,
         "labels": COMPONENT_LABELS,
         "min_value_usd": 1e6,
         "markets": markets,
-        "export_markets_set": bool(ours),
+        "export_markets_set": bool(segments),
     }
+
+
+@router.get("/{hs}/explore")
+def explore_trade(
+    hs: str,
+    _: CurrentUser,
+    db: DB,
+    flow: Literal["M", "X"] = "M",
+    reporters: list[str] = Query(default=[], max_length=60),
+    region: str | None = None,
+    partner: str = "WLD",
+    year_from: int | None = Query(None, ge=1988, le=2100),
+    year_to: int | None = Query(None, ge=1988, le=2100),
+):
+    _hs(db, hs)
+    if year_from and year_to and year_from > year_to:
+        raise HTTPException(422, "The start year must not be after the end year.")
+    try:
+        return explore.explore(
+            db, hs, flow=flow, reporters=reporters, region=region, partner=partner, year_from=year_from, year_to=year_to
+        )
+    except KeyError:
+        raise HTTPException(404, f"Unknown region {region}.") from None
+
+
+class LiveFetchIn(BaseModel):
+    flow: Literal["M", "X"] = "M"
+    reporters: list[str] = Field(min_length=1, max_length=20)
+    partner: str = Field("WLD", max_length=3)
+    years: list[int] = Field(min_length=1, max_length=12)
+
+
+@router.post("/{hs}/explore/fetch")
+def explore_fetch(hs: str, body: LiveFetchIn, user: Analyst, db: DB):
+    """Pull exactly the chosen slice from UN Comtrade (cached; identical requests are not repeated)."""
+    _hs(db, hs)
+    this_year = datetime.now(UTC).year
+    if any(y < 1988 or y >= this_year for y in body.years):
+        raise HTTPException(422, f"Years must be between 1988 and {this_year - 1}.")
+    try:
+        out = explore.fetch_live(
+            db, hs, flow=body.flow, reporters=body.reporters, partner=body.partner, years=body.years
+        )
+    except explore.Busy:
+        raise HTTPException(409, "The same request is already running.") from None
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
+    except comtrade.QuotaExceeded as exc:
+        raise HTTPException(
+            429,
+            f"UN Comtrade call quota is used up; retry in about {exc.wait_s // 60 + 1} min.",
+            headers={"Retry-After": str(exc.wait_s)},
+        ) from None
+    except comtrade.ComtradeError as exc:
+        raise HTTPException(502, f"UN Comtrade did not return data: {exc}") from None
+    audit.record(db, user, "comtrade_fetch", "market", hs, f"{body.flow} {','.join(body.reporters)} {body.years}")
+    db.commit()
+    return out
+
+
+class OpportunityWeights(BaseModel):
+    market_size: float | None = Field(None, ge=0, le=100)
+    growth: float | None = Field(None, ge=0, le=100)
+    retailer_presence: float | None = Field(None, ge=0, le=100)
+    private_label_signal: float | None = Field(None, ge=0, le=100)
+    evidence: float | None = Field(None, ge=0, le=100)
 
 
 def _latest_news(db, hs: str) -> MarketNews | None:
@@ -194,3 +267,42 @@ def country(hs: str, m49: int, _: CurrentUser, db: DB):
     if not d:
         raise HTTPException(404, "No trade data for this country and product.")
     return d
+
+
+# defined after /{hs}/... routes; single-segment paths do not clash with them
+@router.post("/opportunities")
+def private_label_opportunities(body: OpportunityWeights, _: CurrentUser, db: DB):
+    w = body.model_dump(exclude_none=True)
+    result = opportunities.compute(db, w)
+    if sum(result["weights"].values()) <= 0:
+        raise HTTPException(422, "At least one weight must be above zero.")
+    return result
+
+
+@router.get("/opportunities/export")
+def export_opportunities(_: CurrentUser, db: DB):
+    result = opportunities.compute(db)
+    rows = [
+        {
+            "category": r["category"],
+            "hs_codes": " ".join(r["hs_codes"]),
+            "country": r["iso3"],
+            "segment": r["segment"],
+            "retailer": r["retailer"]["name"] if r["retailer"] else "",
+            "retailer_identity": r["retailer"]["identity_status"] if r["retailer"] else "",
+            "import_value_usd": r["import_value_usd"],
+            "latest_year": r["latest_year"],
+            "cagr": r["cagr"],
+            **{f"component_{k}": v for k, v in r["components"].items()},
+            "missing_components": " ".join(r["missing"]),
+            "score": r["score"],
+        }
+        for r in result["rows"]
+    ]
+    meta = f"# Weights: {result['weights']}. Source: UN Comtrade (stored observations) and sourced retailer facts.\n"
+    body = meta + pd.DataFrame(rows).to_csv(index=False)
+    return Response(
+        body.encode("utf-8-sig"),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="private-label-opportunities.csv"'},
+    )

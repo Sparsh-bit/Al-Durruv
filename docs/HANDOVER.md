@@ -86,4 +86,4 @@ No mock data is presented as real anywhere in the application.
    refresh, regular dependency audits.
 6. Remove the local QA account (`qa@example.com`) created for browser testing.
 8. Enter the client's 85+ export markets in Administration (enables the existing/new market split).
-7. Client branding (name "TradeScope" is a placeholder), dark mode, and translations if needed.
+7. Dark mode and translations if needed (branding: Concilio Solutions platform, client brand from the company profile).

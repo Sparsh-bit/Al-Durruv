@@ -1,4 +1,6 @@
-# TradeScope — Trade Intelligence & Buyer Discovery
+# Global Trade Intelligence, by Concilio Solutions
+
+Built for ALDurra Food Products Co. (Durra). Latest audit and launch checklist: [docs/AUDIT_2026-10-28.md](docs/AUDIT_2026-10-28.md).
 
 Web platform for an exporter / private-label manufacturer: load a product and HS code, see official
 trade statistics, rank import markets with an explainable score, discover buyers and competitors with

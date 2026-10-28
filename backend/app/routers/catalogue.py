@@ -9,14 +9,22 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from app.models import HSCode, Product, TradeObservation
+from app.models import Entity, HSCode, HsStatus, Product, TradeObservation
 from app.security import DB, Analyst, CurrentUser
 from app.services import audit
+from app.services.client_data import hs6_of
 
 router = APIRouter(prefix="/api", tags=["catalogue"])
 MAX_UPLOAD = 5 * 1024 * 1024
-REQUIRED = {"sku", "name", "hs_code"}
+REQUIRED = {"sku", "name"}
+HS_STATUSES = tuple(s.value for s in HsStatus)
 TEXT_COLUMNS = (
+    "name_ar",
+    "client_hs_code",
+    "ingredients",
+    "processing",
+    "manufacturing_country",
+    "priority_category",
     "brand",
     "category",
     "pack_size",
@@ -30,10 +38,18 @@ TEXT_COLUMNS = (
 EXPORT_COLUMNS = [
     "sku",
     "name",
+    "name_ar",
     "brand",
     "category",
+    "priority_category",
+    "client_hs_code",
+    "client_hs_source",
     "hs_code",
     "hs_status",
+    "hs_reviewed_at",
+    "ingredients",
+    "processing",
+    "manufacturing_country",
     "pack_size",
     "net_quantity",
     "net_unit",
@@ -55,12 +71,28 @@ def normalize_hs(raw: object) -> str:
     return digits[:6]
 
 
+def hs6_or_none(v: str | None) -> str | None:
+    if not (v or "").strip():
+        return None
+    code = normalize_hs(v)
+    if len(code) != 6:
+        raise ValueError("HS code must have at least 6 digits")
+    return code
+
+
 class ProductIn(BaseModel):
     sku: str = Field(min_length=1, max_length=64)
     name: str = Field(min_length=1, max_length=255)
-    hs_code: str
-    hs_status: Literal["suggested", "confirmed"] = "suggested"
+    hs_code: str | None = None
+    hs_status: Literal["confirmed", "candidate", "insufficient_info", "unmapped"] = "candidate"
     hs_note: str = Field("", max_length=2000)
+    client_hs_code: str = Field("", max_length=14, pattern=r"^[0-9. ]*$")
+    name_ar: str = Field("", max_length=255)
+    ingredients: str = Field("", max_length=4000)
+    processing: str = Field("", max_length=4000)
+    manufacturing_country: str = Field("", pattern=r"^([A-Za-z]{3})?$")
+    export_entity_id: int | None = None
+    priority_category: str = Field("", max_length=60)
     description: str = Field("", max_length=4000)
     category: str = Field("", max_length=120)
     brand: str = Field("", max_length=120)
@@ -73,25 +105,55 @@ class ProductIn(BaseModel):
 
     @field_validator("hs_code")
     @classmethod
-    def _hs(cls, v: str) -> str:
-        code = normalize_hs(v)
-        if len(code) != 6:
-            raise ValueError("HS code must have at least 6 digits")
-        return code
+    def _hs(cls, v: str | None) -> str | None:
+        return hs6_or_none(v)
+
+    @field_validator("manufacturing_country")
+    @classmethod
+    def _iso(cls, v: str) -> str:
+        return v.upper()
+
+    def fields(self) -> dict:
+        d = self.model_dump()
+        if not d["hs_code"]:
+            d["hs_status"] = HsStatus.unmapped
+        elif d["hs_status"] == HsStatus.unmapped:
+            d["hs_status"] = HsStatus.candidate
+        d["client_hs_code"] = re.sub(r"\D", "", d["client_hs_code"])
+        return d
+
+
+def hs_check(p: Product, valid: set[str] | None = None) -> dict:
+    """Compare the client's code with the HS6 used for analysis. Never changes either value."""
+    client6 = hs6_of(p.client_hs_code)
+    issues = []
+    if not p.client_hs_code:
+        issues.append("No client HS code provided.")
+    elif valid is not None and client6 and client6 not in valid:
+        issues.append(f"Client code prefix {client6} is not an HS6 subheading in the current nomenclature.")
+    elif client6 and p.hs_code and client6 != p.hs_code:
+        issues.append(f"Client code points to HS {client6}; the analysis uses HS {p.hs_code}.")
+    if len(p.client_hs_code) > 6:
+        issues.append(
+            f"Client code has {len(p.client_hs_code)} digits: a national tariff line that may not map 1:1 to HS6."
+        )
+    return {"client_hs6": client6, "matches_client": bool(client6 and client6 == p.hs_code), "issues": issues}
 
 
 def pages(p: Product) -> list[int]:
     return [int(x) for x in re.findall(r"\d+", p.catalogue_page or "")]
 
 
-def _out(p: Product, has_data: bool = False) -> dict:
+def _out(p: Product, has_data: bool = False, valid: set[str] | None = None) -> dict:
     return {
         "id": p.id,
         "sku": p.sku,
         "name": p.name,
+        "name_ar": p.name_ar,
         "brand": p.brand,
         "description": p.description,
         "category": p.category,
+        "priority_category": p.priority_category,
         "pack_size": p.pack_size,
         "net_quantity": p.net_quantity,
         "net_unit": p.net_unit,
@@ -99,10 +161,19 @@ def _out(p: Product, has_data: bool = False) -> dict:
         "catalogue_page": p.catalogue_page,
         "catalogue_pages": pages(p),
         "notes": p.notes,
+        "ingredients": p.ingredients,
+        "processing": p.processing,
+        "manufacturing_country": p.manufacturing_country,
+        "export_entity_id": p.export_entity_id,
+        "export_entity": p.export_entity.name if p.export_entity else "",
         "hs_code": p.hs_code,
         "hs_status": p.hs_status,
         "hs_note": p.hs_note,
         "hs_description": p.hs.description if p.hs else "",
+        "client_hs_code": p.client_hs_code,
+        "client_hs_source": p.client_hs_source,
+        "hs_reviewed_at": p.hs_reviewed_at,
+        "hs_check": hs_check(p, valid),
         "has_trade_data": has_data,
     }
 
@@ -120,14 +191,20 @@ def search_hs(_: CurrentUser, db: DB, q: str = "", limit: int = 20):
 @router.get("/products")
 def list_products(_: CurrentUser, db: DB):
     with_data = set(db.scalars(select(TradeObservation.hs_code).distinct()))
+    valid = set(db.scalars(select(HSCode.code)))
     stmt = select(Product).order_by(Product.category, Product.name, Product.net_quantity)
-    return [_out(p, p.hs_code in with_data) for p in db.scalars(stmt)]
+    return [_out(p, p.hs_code in with_data, valid) for p in db.scalars(stmt)]
 
 
 @router.get("/products/export")
 def export_products(_: CurrentUser, db: DB):
-    rows = [{c: getattr(p, c) for c in EXPORT_COLUMNS} for p in db.scalars(select(Product).order_by(Product.sku))]
-    csv = pd.DataFrame(rows, columns=EXPORT_COLUMNS).to_csv(index=False)
+    valid = set(db.scalars(select(HSCode.code)))
+    rows = []
+    for p in db.scalars(select(Product).order_by(Product.sku)):
+        row = {c: getattr(p, c) for c in EXPORT_COLUMNS}
+        row["hs_issues"] = " ".join(hs_check(p, valid)["issues"])
+        rows.append(row)
+    csv = pd.DataFrame(rows, columns=[*EXPORT_COLUMNS, "hs_issues"]).to_csv(index=False)
     return Response(
         csv.encode("utf-8-sig"),
         media_type="text/csv",
@@ -141,20 +218,22 @@ def get_product(product_id: int, _: CurrentUser, db: DB):
     if not p:
         raise HTTPException(404, "Product not found.")
     has = db.scalar(select(func.count()).select_from(TradeObservation).where(TradeObservation.hs_code == p.hs_code)) > 0
-    return _out(p, has)
+    return _out(p, has, set(db.scalars(select(HSCode.code))))
 
 
-def _check_hs(db, code: str) -> None:
-    if not db.get(HSCode, code):
-        raise HTTPException(422, f"HS code {code} is not a valid HS6 code in the UN Comtrade classification.")
+def _check_hs(db, body: ProductIn) -> None:
+    if body.hs_code and not db.get(HSCode, body.hs_code):
+        raise HTTPException(422, f"HS code {body.hs_code} is not a valid HS6 code in the UN Comtrade classification.")
+    if body.export_entity_id and not db.get(Entity, body.export_entity_id):
+        raise HTTPException(422, "Unknown export entity.")
 
 
 @router.post("/products", status_code=201)
 def create_product(body: ProductIn, user: Analyst, db: DB):
-    _check_hs(db, body.hs_code)
+    _check_hs(db, body)
     if db.scalar(select(Product).where(Product.sku == body.sku)):
         raise HTTPException(409, f"SKU {body.sku} already exists.")
-    p = Product(**body.model_dump())
+    p = Product(**body.fields())
     db.add(p)
     db.flush()
     audit.record(db, user, "create", "product", p.id, f"{p.sku} {p.name}")
@@ -168,12 +247,17 @@ def update_product(product_id: int, body: ProductIn, user: Analyst, db: DB):
     p = db.get(Product, product_id)
     if not p:
         raise HTTPException(404, "Product not found.")
-    _check_hs(db, body.hs_code)
+    _check_hs(db, body)
     clash = db.scalar(select(Product).where(Product.sku == body.sku, Product.id != product_id))
     if clash:
         raise HTTPException(409, f"SKU {body.sku} already exists.")
-    changed = [k for k, v in body.model_dump().items() if getattr(p, k) != v]
-    for k, v in body.model_dump().items():
+    fields = body.fields()
+    if p.client_hs_code and fields["client_hs_code"] != p.client_hs_code:
+        raise HTTPException(422, "The client's HS code is kept exactly as provided and cannot be edited here.")
+    if fields["hs_code"] != p.hs_code and fields["hs_status"] == HsStatus.confirmed:
+        fields["hs_status"] = HsStatus.candidate  # a changed code must be confirmed again through review
+    changed = [k for k, v in fields.items() if getattr(p, k) != v]
+    for k, v in fields.items():
         setattr(p, k, v)
     audit.record(db, user, "update", "product", p.id, f"{p.sku}: {', '.join(changed) or 'no changes'}")
     db.commit()
@@ -189,6 +273,40 @@ def delete_product(product_id: int, user: Analyst, db: DB):
     audit.record(db, user, "delete", "product", p.id, f"{p.sku} {p.name}")
     db.delete(p)
     db.commit()
+
+
+class HsReviewIn(BaseModel):
+    hs_code: str | None = None
+    status: Literal["confirmed", "candidate", "insufficient_info", "unmapped"]
+    note: str = Field("", max_length=2000)
+
+    @field_validator("hs_code")
+    @classmethod
+    def _hs(cls, v: str | None) -> str | None:
+        return hs6_or_none(v)
+
+
+@router.post("/products/{product_id}/hs-review")
+def review_hs(product_id: int, body: HsReviewIn, user: Analyst, db: DB):
+    """Record a reviewer's HS decision. The client's own code is never changed."""
+    p = db.get(Product, product_id)
+    if not p:
+        raise HTTPException(404, "Product not found.")
+    if body.status == HsStatus.unmapped:
+        body.hs_code = None
+    elif not body.hs_code:
+        raise HTTPException(422, "Choose an HS6 code, or mark the product as unmapped.")
+    elif not db.get(HSCode, body.hs_code):
+        raise HTTPException(422, f"HS code {body.hs_code} is not a valid HS6 code in the UN Comtrade classification.")
+    before = f"{p.hs_code or '-'} {p.hs_status}"
+    p.hs_code, p.hs_status = body.hs_code, body.status
+    if body.note:
+        p.hs_note = body.note
+    p.hs_reviewed_by, p.hs_reviewed_at = user.id, func.now()
+    audit.record(db, user, "hs_review", "product", p.id, f"{p.sku}: {before} -> {p.hs_code or '-'} {p.hs_status}")
+    db.commit()
+    db.refresh(p)
+    return _out(p, False, set(db.scalars(select(HSCode.code))))
 
 
 @router.post("/products/import")
@@ -243,26 +361,43 @@ def apply_catalogue(db: Session, df: pd.DataFrame) -> dict:
     seen: set[str] = set()
     for i, row in df.fillna("").astype(str).iterrows():
         line = int(i) + 2  # header is line 1
-        sku, pname, hs = row["sku"].strip(), row["name"].strip(), normalize_hs(row["hs_code"])
+        sku, pname, hs = row["sku"].strip(), row["name"].strip(), normalize_hs(row.get("hs_code", ""))
         if not sku or not pname:
             errors.append({"line": line, "error": "sku and name are required"})
             continue
         if sku in seen:
             errors.append({"line": line, "error": f"duplicate SKU '{sku}' in file"})
             continue
-        if hs not in valid_hs:
+        if hs and hs not in valid_hs:
             errors.append({"line": line, "error": f"invalid HS code '{row['hs_code']}'"})
             continue
         seen.add(sku)
-        fields = {"name": pname[:255], "hs_code": hs}
+        fields = {"name": pname[:255], "hs_code": hs or None}
         fields.update({c: row[c].strip() for c in TEXT_COLUMNS if c in row})
+        if "client_hs_code" in fields:
+            fields["client_hs_code"] = re.sub(r"\D", "", fields["client_hs_code"])[:14]
+        if "manufacturing_country" in fields:
+            fields["manufacturing_country"] = fields["manufacturing_country"].upper()[:3]
         if "net_quantity" in row:
             fields["net_quantity"] = _net_quantity(row["net_quantity"].strip())
-        if row.get("hs_status", "").strip().lower() in ("suggested", "confirmed"):
-            fields["hs_status"] = row["hs_status"].strip().lower()
+        status = row.get("hs_status", "").strip().lower().replace("suggested", "candidate")
+        if status in HS_STATUSES:
+            fields["hs_status"] = status
+        if not hs:
+            fields["hs_status"] = HsStatus.unmapped
         p = db.scalar(select(Product).where(Product.sku == sku))
-        if p and p.hs_code != hs and "hs_status" not in fields:
-            fields["hs_status"] = "suggested"  # a changed code is no longer the confirmed one
+        if p and p.client_hs_code and fields.get("client_hs_code", p.client_hs_code) != p.client_hs_code:
+            errors.append(
+                {
+                    "line": line,
+                    "error": f"client HS code for '{sku}' differs from the one on file; it is kept unchanged",
+                }
+            )
+            fields.pop("client_hs_code")
+        if p and p.hs_code != fields["hs_code"] and fields.get("hs_status") == HsStatus.confirmed:
+            fields["hs_status"] = HsStatus.candidate  # a changed code must be confirmed again
+        elif p and p.hs_code != fields["hs_code"] and "hs_status" not in fields:
+            fields["hs_status"] = HsStatus.candidate
         if p:
             for k, v in fields.items():
                 setattr(p, k, v)

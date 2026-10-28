@@ -14,6 +14,8 @@ with the API on the same domain. Neon provides PostgreSQL.
 
 The production branch already holds the schema, the 127 Durra products, the loaded trade data, researched
 companies and the admin account. On each start the app runs pending migrations; the seed skips what exists.
+Client setup data (`backend/data/client_setup.json`, `client_hs_list.csv`) is applied once per file version: it
+only fills what is missing and never overwrites values edited in the app or HS codes a reviewer confirmed.
 
 ## 2. Railway (app)
 

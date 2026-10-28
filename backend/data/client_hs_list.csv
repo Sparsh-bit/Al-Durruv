@@ -1,0 +1,41 @@
+row_no,client_hs_code,name_en,name_ar,analysis_hs6,status,finding,skus,new_sku,new_category,priority_category
+1,2001190000,Pickled Cucumber,مخلل خيار,200110,candidate,"Client code prefix 2001.19 does not exist in HS 2022 (heading 2001 has 2001.10 cucumbers and 2001.90 others). Cucumbers and gherkins in vinegar are 2001.10. Confirm the national tariff line.",DUR-PKL-001;DUR-PKL-003,,,Pickles
+2,2001190000,Mixed pickled,مخلل مشكل,200190,candidate,"Client code prefix 2001.19 does not exist in HS 2022. Mixed vegetables in vinegar fall under 2001.90. Same client code is used for cucumber and beetroot.",DUR-PKL-004;DUR-PKL-005;DUR-PKL-007,,,Pickles
+3,21069099,Pickled Grape Leaves,مخلل ورق عنب,200899,candidate,"Client code is 2106.90 (food preparations not elsewhere specified). Grape leaves in brine are usually classified as other edible parts of plants, 2008.99 (or 2001.90 if packed in vinegar). Confirm with the customs broker.",DUR-PKL-008,,,Grape leaves
+4,2001900020,Pickled Pepper,مخلل فلفل كل الانواع,200190,candidate,Consistent: peppers prepared in vinegar (2001.90).,DUR-PKL-006,,,Pickles
+5,2001900080,Stuffed Eggplant,مكدوس,200190,candidate,"Consistent if the product is preserved with vinegar or acetic acid (2001.90). If preserved only in salt and oil, 2005.99 applies. Confirm the recipe.",DUR-MKD-001;DUR-MKD-002,,,Pickles
+6,2001900020,Artichoke,خرشوف,200190,candidate,"Consistent if packed in vinegar (2001.90); artichokes in brine without vinegar are 2005.99.",DUR-ART-001,,,Pickles
+7,2001900020,Green Olive,زيتون مخلل,200190,candidate,"Client code is 2001.90 (in vinegar). Olives in brine without vinegar are 2005.70. Confirm the brine recipe; the choice changes which trade statistics apply.",DUR-OLV-001;DUR-OLV-002;DUR-OLV-003;DUR-OLV-004;DUR-OLV-006,,,Pickles
+,2001900030,Black Olive,زيتون اسود,200190,candidate,"Listed without a row number in the client file. Client code is 2001.90 (in vinegar); black olives in brine without vinegar are 2005.70.",DUR-OLV-005,,,Pickles
+8,0712900010,Dry Mellow,ملوخية ورق,071290,candidate,"Consistent: other dried vegetables (0712.90). The Arabic name is dried molokhia (jute mallow) leaves; the English name 'Dry Mellow' should read 'Dried Molokhia'.",,DUR-DRV-101,Dried Vegetables,
+9,2001900020,Pickled Turnip,مخلل لفت,200190,candidate,Consistent: turnips prepared in vinegar (2001.90).,DUR-PKL-002,,,Pickles
+10,2209000015,White Vinegar,خل ابيض واحمر,220900,candidate,Consistent: vinegar (2209.00). The Arabic name covers white and red vinegar.,DUR-VIN-001,,,
+11,12092950,Lupine,ترمس,200599,candidate,"Client code is 1209.29 (seeds of a kind used for sowing). Ready-to-eat lupine beans in brine are prepared vegetables, 2005.99 (or 2001.90 in vinegar). Confirm the product form.",DUR-LUP-001,,,Pickles
+12,20096100,Sour Grapes,صوص حصرم,200961,candidate,"Consistent if the product is unfermented sour-grape juice (verjuice) of Brix 30 or less (2009.61). If it is a thickened sauce, 2103.90 applies.",,DUR-SAU-101,Sauces,Sauces
+13,1212990010,Egyptian Melon Seeds,بذر مصري سوبر,121299,insufficient_info,"Client code is 1212.99. Raw melon seeds are 1207.70; roasted, salted snack seeds are 2008.19. State whether the seeds are raw or roasted.",,DUR-SNK-101,Seeds & Snacks,
+14,2001190000,Beetroot,شمندر شرائح ومكعبات,200190,candidate,"Client code prefix 2001.19 does not exist in HS 2022. Beetroot in vinegar is 2001.90.",DUR-BTR-001,,,Pickles
+15,2007990030,Pomegranate Sauce,دبس الرمان,200799,candidate,"Client code is 2007.99 (fruit pastes and purées). The Arabic name is pomegranate molasses. Confirm whether the catalogue's Pomegranate Syrup items are the same product.",DUR-SYR-001,,,Pomegranate
+16,22090090,Amba Sauce,صوص العمبه,210390,candidate,"Client code is 2209.00 (vinegar). Amba is a mango-based condiment sauce, normally 2103.90. Confirm with the customs broker.",,DUR-SAU-102,Sauces,Sauces
+17,20031000,Mushroom Slices,مشروم شرائح (فطر ),200310,candidate,Consistent: Agaricus mushrooms prepared otherwise than in vinegar (2003.10).,,DUR-CNV-101,Canned Vegetables,
+18,20019000,Pickled cherry peppers,مخلل فلفل كرزية,200190,candidate,Consistent: peppers prepared in vinegar (2001.90).,,DUR-PKL-101,Pickles,Pickles
+19,2103900000,Crushed Red Pepper,فليفلة حمراء مطحونة,210390,insufficient_info,"Client code is 2103.90 (sauces), which fits a wet pepper paste. Dry crushed chilli flakes are 0904.22. Confirm whether this is the catalogue's Hot Pepper Paste.",DUR-SAU-008,,,Sauces
+20,2103200010,Ketchup,كتشب,210320,candidate,Consistent: tomato ketchup (2103.20).,DUR-SAU-001;DUR-SAU-002;DUR-SAU-003,,,Sauces
+21,2103900091,Hot Sauce,هوت صوص,210390,candidate,Consistent: sauces (2103.90).,DUR-SAU-009,,,Sauces
+,2103100000,Soya Sauce,صويا صوص,210310,candidate,Listed without a row number in the client file. Consistent: soya sauce (2103.10).,,DUR-SAU-103,Sauces,Sauces
+22,2103900020,Burger Sauce,صوص برجر,210390,candidate,Consistent: sauces (2103.90).,,DUR-SAU-104,Sauces,Sauces
+23,2103900020,Chilli sauce,شيلي صوص,210390,candidate,Consistent: sauces (2103.90).,,DUR-SAU-105,Sauces,Sauces
+24,2103900020,Sauce Ranch,صوص رانش,210390,candidate,Consistent: sauces (2103.90).,,DUR-SAU-106,Sauces,Sauces
+25,2103900010,Mayonnaise,مايونيز,210390,candidate,Consistent: mayonnaise (2103.90).,DUR-SAU-005,,,Sauces
+26,3301900015,Tome Sauce,صوص ثوميه,210390,candidate,"Client code is 3301.90 (essential-oil extracts). Toum is a garlic sauce, normally 2103.90. Confirm with the customs broker.",,DUR-SAU-107,Sauces,Sauces
+27,2103900020,BBQ Sauce,صوص باربيكيو,210390,candidate,Consistent: sauces (2103.90).,DUR-SAU-006,,,Sauces
+28,2103900092,Mustard,مسطردة,210330,candidate,"Client code is 2103.90. Prepared mustard has its own subheading, 2103.30. Confirm with the customs broker.",DUR-SAU-004,,,Sauces
+29,2002900010,Tomato Pulp,طماطم بالب,200290,candidate,Consistent: tomatoes prepared or preserved otherwise than whole or in pieces (2002.90).,,DUR-TOM-101,Tomato Products,Tomato paste
+,2102100000,,طماطم مقشرة,200210,insufficient_info,"Listed without a row number or English name (Arabic: peeled tomatoes). Client code is 2102.10 (active yeasts). Whole or peeled tomatoes are 2002.10. Provide the English name and confirm the code.",,DUR-TOM-102,Tomato Products,Tomato paste
+30,21039090,Pizza Sauce,صلصة البيتزا,210390,candidate,"Client code is 2103.90. Tomato-based sauces can also fall under 2103.20; confirm the tomato content.",DUR-SAU-007,,,Sauces
+31,2103200090,Tomato Paste,معجون طماطم,200290,candidate,"Client code is 2103.20 (ketchup and other tomato sauces). Concentrated tomato paste is 2002.90. Confirm with the customs broker.",DUR-TOM-001;DUR-TOM-002,,,Tomato paste
+32,2106909096,Chicken Stock,مرقة دجاج,210410,candidate,"Client code is 2106.90. Stocks, broths and bouillon are 2104.10. Confirm with the customs broker.",,DUR-STK-101,Stocks & Soups,
+33,07131020,Green Peas,بازلاء مجمده,071021,insufficient_info,"Client code is 0713.10 (dried peas) but the Arabic name says frozen (0710.21). State whether the peas are dried or frozen.",,DUR-FRZ-101,Frozen Vegetables,
+34,07102100,Peas + carrots,بازلاء + جزر,071090,candidate,"Client code is 0710.21 (frozen peas). A frozen mixture of vegetables is 0710.90.",,DUR-FRZ-102,Frozen Vegetables,
+35,07102200,Frozen Beans,فول مجمد,071029,candidate,"Client code is 0710.22 (Vigna/Phaseolus beans). The Arabic name is frozen broad beans, which fall under 0710.29.",,DUR-FRZ-103,Frozen Vegetables,
+36,07108090,Okra,بامية مجمده,071080,candidate,Consistent: other frozen vegetables (0710.80).,,DUR-FRZ-104,Frozen Vegetables,
+37,20041000,Fried Potatoes,بطاطس نص مقلية,200410,candidate,Consistent: frozen prepared potatoes (2004.10).,,DUR-FRZ-105,Frozen Vegetables,

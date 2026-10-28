@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState, type FormEvent } from 'react'
 import { toast } from 'sonner'
 import { api, post, put } from '../lib/api'
-import type { Product } from '../lib/types'
+import type { AppSettings, Entity, Product } from '../lib/types'
 import { Button, Field, Input, Select, Textarea } from './ui'
 
 type HS = { code: string; description: string }
@@ -21,15 +21,22 @@ type FormState = {
   catalogue_page: string
   description: string
   notes: string
+  name_ar: string
+  client_hs_code: string
+  ingredients: string
+  processing: string
+  manufacturing_country: string
+  priority_category: string
+  export_entity_id: string
 }
 
 const EMPTY: FormState = {
   sku: '',
   name: '',
-  brand: 'Durra',
+  brand: '',
   category: '',
   hs_code: '',
-  hs_status: 'suggested',
+  hs_status: 'candidate',
   hs_note: '',
   pack_size: '',
   net_quantity: '',
@@ -38,6 +45,13 @@ const EMPTY: FormState = {
   catalogue_page: '',
   description: '',
   notes: '',
+  name_ar: '',
+  client_hs_code: '',
+  ingredients: '',
+  processing: '',
+  manufacturing_country: '',
+  priority_category: '',
+  export_entity_id: '',
 }
 
 function fromProduct(p: Product): FormState {
@@ -46,7 +60,7 @@ function fromProduct(p: Product): FormState {
     name: p.name,
     brand: p.brand,
     category: p.category,
-    hs_code: p.hs_code,
+    hs_code: p.hs_code ?? '',
     hs_status: p.hs_status,
     hs_note: p.hs_note,
     pack_size: p.pack_size,
@@ -56,6 +70,13 @@ function fromProduct(p: Product): FormState {
     catalogue_page: p.catalogue_page,
     description: p.description,
     notes: p.notes,
+    name_ar: p.name_ar,
+    client_hs_code: p.client_hs_code,
+    ingredients: p.ingredients,
+    processing: p.processing,
+    manufacturing_country: p.manufacturing_country,
+    priority_category: p.priority_category,
+    export_entity_id: p.export_entity_id ? String(p.export_entity_id) : '',
   }
 }
 
@@ -76,7 +97,6 @@ export function HsPicker({ value, onChange }: { value: string; onChange: (code: 
     <div className="relative">
       <Input
         value={q}
-        required
         placeholder="Type a code (1905) or keyword (biscuits)"
         onChange={(e) => {
           setQ(e.target.value)
@@ -95,7 +115,7 @@ export function HsPicker({ value, onChange }: { value: string; onChange: (code: 
             <li key={h.code}>
               <button
                 type="button"
-                className="flex w-full gap-3 rounded-md px-2.5 py-2 text-left text-sm hover:bg-slate-50"
+                className="flex w-full gap-3 rounded-md px-2.5 py-2 text-left text-sm hover:bg-fog"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => {
                   setQ(h.code)
@@ -104,7 +124,7 @@ export function HsPicker({ value, onChange }: { value: string; onChange: (code: 
                 }}
               >
                 <span className="font-mono text-xs font-semibold text-brand-700">{h.code}</span>
-                <span className="line-clamp-2 text-slate-700">{h.description}</span>
+                <span className="line-clamp-2 text-ink-800">{h.description}</span>
               </button>
             </li>
           ))}
@@ -119,6 +139,9 @@ export default function ProductForm({ initial, categories, onDone }: { initial?:
   const [f, setF] = useState<FormState>(initial ? fromProduct(initial) : EMPTY)
   const [hsDesc, setHsDesc] = useState(initial?.hs_description ?? '')
   const set = (k: keyof FormState) => (e: { target: { value: string } }) => setF((s) => ({ ...s, [k]: e.target.value }))
+  const settings = useQuery({ queryKey: ['settings'], queryFn: () => api<AppSettings>('/api/admin/settings') })
+  const entities = useQuery({ queryKey: ['entities'], queryFn: () => api<Entity[]>('/api/entities') })
+  const defaultBrand = settings.data?.company_profile.brand ?? ''
 
   const save = useMutation({
     mutationFn: () => {
@@ -126,6 +149,9 @@ export default function ProductForm({ initial, categories, onDone }: { initial?:
         ...f,
         net_quantity: f.net_quantity === '' ? null : Number(f.net_quantity),
         net_unit: f.net_quantity === '' ? '' : f.net_unit,
+        brand: f.brand || (initial ? '' : defaultBrand),
+        hs_code: f.hs_code || null,
+        export_entity_id: f.export_entity_id ? Number(f.export_entity_id) : null,
       }
       return initial ? put<Product>(`/api/products/${initial.id}`, body) : post<Product>('/api/products', body)
     },
@@ -145,7 +171,7 @@ export default function ProductForm({ initial, categories, onDone }: { initial?:
   return (
     <form onSubmit={submit} className="space-y-5">
       <fieldset className="grid gap-4 sm:grid-cols-2">
-        <legend className="mb-3 text-xs font-semibold tracking-wider text-muted uppercase">Product</legend>
+        <legend className="micro mb-3 text-muted">Product</legend>
         <Field label="Product name">
           <Input required maxLength={255} value={f.name} onChange={set('name')} />
         </Field>
@@ -159,7 +185,7 @@ export default function ProductForm({ initial, categories, onDone }: { initial?:
           </datalist>
         </Field>
         <Field label="Brand">
-          <Input maxLength={120} value={f.brand} onChange={set('brand')} />
+          <Input maxLength={120} value={f.brand} onChange={set('brand')} placeholder={initial ? '' : defaultBrand} />
         </Field>
         <div className="sm:col-span-2">
           <Field label="Description">
@@ -168,8 +194,41 @@ export default function ProductForm({ initial, categories, onDone }: { initial?:
         </div>
       </fieldset>
 
+      <fieldset className="grid gap-4 sm:grid-cols-2">
+        <legend className="micro mb-3 text-muted">Product master</legend>
+        <Field label="Arabic name">
+          <Input dir="rtl" lang="ar" maxLength={255} value={f.name_ar} onChange={set('name_ar')} />
+        </Field>
+        <Field label="Priority private-label category">
+          <Select value={f.priority_category} onChange={set('priority_category')}>
+            <option value="">Not a priority category</option>
+            {(settings.data?.priority_categories ?? []).map((c) => <option key={c} value={c}>{c}</option>)}
+            {f.priority_category && !settings.data?.priority_categories.includes(f.priority_category) && <option value={f.priority_category}>{f.priority_category}</option>}
+          </Select>
+        </Field>
+        <Field label="Manufacturing country (ISO3)">
+          <Input maxLength={3} pattern="[A-Za-z]{3}" value={f.manufacturing_country} onChange={set('manufacturing_country')} placeholder="e.g. EGY" className="font-mono uppercase" />
+        </Field>
+        <Field label="Export / manufacturing entity">
+          <Select value={f.export_entity_id} onChange={set('export_entity_id')}>
+            <option value="">Not assigned</option>
+            {(entities.data ?? []).map((e) => <option key={e.id} value={e.id}>{e.name} ({e.country_iso3 || '—'})</option>)}
+          </Select>
+        </Field>
+        <div className="sm:col-span-2">
+          <Field label="Ingredients">
+            <Textarea rows={2} maxLength={4000} value={f.ingredients} onChange={set('ingredients')} />
+          </Field>
+        </div>
+        <div className="sm:col-span-2">
+          <Field label="Processing" hint="e.g. in brine, in vinegar, pasteurised, frozen. This decides several HS subheadings.">
+            <Textarea rows={2} maxLength={4000} value={f.processing} onChange={set('processing')} />
+          </Field>
+        </div>
+      </fieldset>
+
       <fieldset className="grid gap-4 sm:grid-cols-4">
-        <legend className="mb-3 text-xs font-semibold tracking-wider text-muted uppercase">Pack</legend>
+        <legend className="micro mb-3 text-muted">Pack</legend>
         <div className="sm:col-span-2">
           <Field label="Pack size (as printed)" hint="e.g. 600 g (drained 400 g)">
             <Input maxLength={80} value={f.pack_size} onChange={set('pack_size')} />
@@ -199,22 +258,33 @@ export default function ProductForm({ initial, categories, onDone }: { initial?:
       </fieldset>
 
       <fieldset className="grid gap-4 sm:grid-cols-2">
-        <legend className="mb-3 text-xs font-semibold tracking-wider text-muted uppercase">Customs classification</legend>
+        <legend className="micro mb-3 text-muted">Customs classification</legend>
         <Field label="HS code (6-digit)" hint={hsDesc || 'Search the official UN Comtrade HS classification.'}>
           <HsPicker
             value={f.hs_code}
             onChange={(code, desc) => {
-              setF((s) => ({ ...s, hs_code: code, hs_status: code === initial?.hs_code ? s.hs_status : 'suggested' }))
+              setF((s) => ({ ...s, hs_code: code, hs_status: code === initial?.hs_code ? s.hs_status : 'candidate' }))
               setHsDesc(desc ?? '')
             }}
           />
         </Field>
-        <Field label="Classification status" hint="Confirm only after a customs broker or the client has verified the code.">
-          <Select value={f.hs_status} onChange={set('hs_status')}>
-            <option value="suggested">Suggested</option>
-            <option value="confirmed">Confirmed</option>
-          </Select>
+        <Field
+          label="Client HS code (as provided)"
+          hint={initial?.client_hs_code ? 'Kept exactly as the client provided it.' : 'National 8–10 digit code from the client, if any.'}
+        >
+          <Input
+            value={f.client_hs_code}
+            onChange={set('client_hs_code')}
+            readOnly={Boolean(initial?.client_hs_code)}
+            inputMode="numeric"
+            pattern="[0-9. ]*"
+            maxLength={14}
+            className="font-mono"
+          />
         </Field>
+        <p className="text-xs leading-relaxed text-muted sm:col-span-2">
+          Confirm or change the classification from the product panel (HS review). Editing the code here resets it to Candidate.
+        </p>
         <div className="sm:col-span-2">
           <Field label="Classification note">
             <Input maxLength={2000} value={f.hs_note} onChange={set('hs_note')} />

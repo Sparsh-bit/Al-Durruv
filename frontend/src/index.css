@@ -1,27 +1,40 @@
-@import '@fontsource-variable/inter';
+@import '@fontsource-variable/instrument-sans';
+@import '@fontsource-variable/bricolage-grotesque';
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
 @import 'tailwindcss';
 
+/* Concilio Solutions design language: ink on fog, one teal accent, hairline rules, mono micro-labels. */
 @theme {
-  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-sans: 'Instrument Sans Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-display: 'Bricolage Grotesque Variable', 'Instrument Sans Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  --color-ink-950: #071426;
-  --color-ink-900: #0b1f3a;
-  --color-ink-800: #12305a;
-  --color-ink-700: #1b4277;
+  --color-ink-950: #0a1012;
+  --color-ink-900: #121c1e;
+  --color-ink-800: #1d2b2e;
+  --color-ink-700: #2b3d41;
 
-  --color-brand-50: #effcf9;
-  --color-brand-100: #c9f5ec;
-  --color-brand-200: #94eadb;
-  --color-brand-500: #14b8a6;
-  --color-brand-600: #0d9488;
-  --color-brand-700: #0f766e;
+  --color-brand-50: #eef8f7;
+  --color-brand-100: #d7efec;
+  --color-brand-200: #a9dcd7;
+  --color-brand-500: #5fc4be;
+  --color-brand-600: #2e948d;
+  --color-brand-700: #20736e;
 
-  --color-canvas: #f5f7fb;
-  --color-line: #e3e8f0;
-  --color-muted: #5b6b7f;
+  --color-canvas: #f5f7f7;
+  --color-fog: #edf1f1;
+  --color-paper: #fbfcfc;
+  --color-line: #e3e7e8;
+  --color-line-soft: #eef1f2;
+  --color-body: #4b585b;
+  --color-muted: #5f696b;
 
-  --shadow-card: 0 1px 2px rgb(15 23 42 / 0.04), 0 1px 3px rgb(15 23 42 / 0.06);
-  --shadow-pop: 0 10px 30px -10px rgb(15 23 42 / 0.25);
+  --shadow-card: 0 1px 0 rgb(14 21 23 / 0.03);
+  --shadow-lift: 0 1px 0 rgb(14 21 23 / 0.04), 0 8px 24px -16px rgb(14 21 23 / 0.18);
+  --shadow-pop: 0 18px 40px -18px rgb(14 21 23 / 0.32), 0 2px 6px rgb(14 21 23 / 0.06);
+
+  --animate-dotPatternMotion: none;
 }
 
 @layer base {
@@ -30,14 +43,44 @@
     text-rendering: optimizeLegibility;
   }
   body {
-    @apply bg-canvas text-slate-900;
-    font-feature-settings: 'cv11', 'ss01';
+    @apply bg-canvas text-[#0e1517];
+    font-feature-settings: 'ss01', 'cv11';
+  }
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    letter-spacing: -0.015em;
+  }
+  ::selection {
+    background: var(--color-brand-100);
   }
   :focus-visible {
-    @apply outline-2 outline-offset-2 outline-brand-500;
+    @apply outline-2 outline-offset-2 outline-brand-600;
   }
   .tabular {
     font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+  /* small uppercase mono label used for section eyebrows, table heads and metadata */
+  .micro {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .num {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
+  /* faint ledger rules behind hero areas */
+  .ledger {
+    background-image: linear-gradient(to bottom, var(--color-line-soft) 1px, transparent 1px);
+    background-size: 100% 28px;
   }
 }
 
