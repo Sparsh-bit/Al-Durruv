@@ -8,6 +8,7 @@ import { useAuth } from '../lib/auth'
 import { date, usd } from '../lib/format'
 import type { Provider, Quote, RouteLocation } from '../lib/types'
 import RouteLocations from '../components/RouteLocations'
+import SeaRoute from '../components/SeaRoute'
 
 const EMPTY = {
   origin: '',
@@ -183,6 +184,7 @@ export default function Logistics() {
       </div>
       <Comparison quotes={data.data?.quotes ?? []} />
       <RouteLocations />
+      <SeaRoute />
       <Card>
         <CardHeader title="Client-provided quotes" subtitle="Shown in market detail and cited by the AI analyst as labelled estimates" />
         {data.isLoading ? (

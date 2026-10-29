@@ -218,3 +218,51 @@ def test_security_headers(viewer):
     h = viewer.get("/api/health").headers
     assert h["X-Frame-Options"] == "DENY" and h["X-Content-Type-Options"] == "nosniff"
     assert "geolocation=()" in h["Permissions-Policy"] and h["Cross-Origin-Opener-Policy"] == "same-origin"
+
+
+# --- WTO Timeseries tariffs (HTTP mocked; shapes from the portal's DataPointExtended model) --------------
+
+
+def test_wto_tariffs_resolve_codes_by_name_and_store_caveats(db, monkeypatch):
+    from app.connectors import wto
+    from app.models import Tariff
+
+    monkeypatch.setattr(get_settings(), "wto_api_key", "wto-test-key-NOT-REAL")
+    monkeypatch.setattr(wto.time, "sleep", lambda s: None)
+    wto._calls.clear()
+    db.execute(insert(HSCode).values([{"code": "200290", "description": "x"}]).on_conflict_do_nothing())
+    seen = []
+
+    def get(url, params=None, headers=None, timeout=None):
+        seen.append((url, dict(params or {}), dict(headers or {})))
+        if url.endswith("/indicators"):
+            body = [
+                {"code": "HS_A_0010", "name": "HS MFN - Simple average ad valorem duty"},
+                {"code": "HS_A_0020", "name": "HS MFN - Maximum  ad valorem duty"},
+                {"code": "HS_A_0030", "name": "HS MFN - Number of NAV tariff lines"},
+            ]
+        elif url.endswith("/reporters"):
+            body = [
+                {"code": "918", "name": "European Union", "iso3A": "EUN"},
+                {"code": "392", "iso3A": "JPN", "name": "Japan"},
+            ]
+        else:
+            v = {"HS_A_0010": 14.4, "HS_A_0020": 18.0, "HS_A_0030": 1}[params["i"]]
+            body = {"Dataset": [{"Year": 2023, "Value": v - 1}, {"Year": 2024, "Value": v}]}
+        return httpx.Response(200, json=body, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(wto.httpx, "get", get)
+    rows = wto.load_tariffs(db, "EUN", "200290")
+    mfn = next(t for t in rows if t.rate_type == "MFN")
+    assert mfn.ad_valorem_pct == 14.4 and mfn.data_year == 2024 and mfn.source == "wto"
+    assert "up to 18%" in mfn.notes and "non-ad-valorem" in mfn.notes
+    assert all(h["Ocp-Apim-Subscription-Key"] == "wto-test-key-NOT-REAL" for _u, _p, h in seen)
+    assert all("subscription-key" not in p for _u, p, _h in seen)  # key only in the header
+    assert seen[-1][1]["r"] == "918" and seen[-1][1]["pc"] == "200290"
+    assert db.query(Tariff).filter(Tariff.source == "wto").count() == 1
+    n = len(seen)
+    wto.load_tariffs(db, "EUN", "200290")
+    assert len(seen) == n  # cached
+    monkeypatch.setattr(get_settings(), "wto_api_key", "")
+    with pytest.raises(Exception, match="WTO_API_KEY"):
+        wto._get("/indicators", {})

@@ -33,6 +33,12 @@ class Settings(BaseSettings):
     # Maersk Developer Portal app: Locations and Commodities APIs authenticate with the Consumer Key header only.
     # The portal's Consumer Secret is not used by either API.
     maersk_consumer_key: str = ""
+    # WTO API portal subscription (primary key) for the Timeseries API; the secondary key is only for rotation.
+    wto_api_key: str = ""
+    # auto-sea-way routing service you host yourself (github.com/auto-sea-way/asw), e.g. on Railway's private
+    # network: http://asw.railway.internal:3000. ASW_API_KEY must equal the service's own ASW_API_KEY.
+    asw_base_url: str = ""
+    asw_api_key: str = ""
     http_timeout_s: float = 60.0
 
     comtrade_subscription_key: str = ""

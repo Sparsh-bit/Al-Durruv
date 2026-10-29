@@ -170,6 +170,7 @@ function Connectors() {
                   <td className={td}>
                     <div className="font-medium text-ink-900">{s.name}</div>
                     {s.needs && <div className="text-[12px] text-amber-800">Needs {s.needs}</div>}
+                    {s.stale && <div className="text-[12px] text-red-700">Stale: {s.stale_reasons?.join('; ')}</div>}
                   </td>
                   <td className={td}><Badge tone={s.confidence === 'official' ? 'green' : s.confidence === 'licensed' ? 'blue' : 'amber'}>{s.confidence}</Badge></td>
                   <td className={`${td} num`}>{s.rows !== undefined ? num(s.rows) : '—'}</td>

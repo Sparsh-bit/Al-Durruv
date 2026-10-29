@@ -18,6 +18,9 @@ Operating the Durra trade-intelligence platform (Concilio Solutions). For first-
 | `CENSUS_API_KEY` | for US monthly | Free key from https://api.census.gov/data/key_signup.html |
 | `FEATURE_WEB_CONTEXT` | optional | `true` (default) allows AI web research for companies and news |
 | `MAERSK_CONSUMER_KEY` | for Maersk | Consumer Key of your Maersk Developer Portal app with the Locations and Commodities API products enabled. The Consumer Secret is **not** needed |
+| `WTO_API_KEY` | for WTO tariffs | **Primary** key of your WTO API portal subscription (Timeseries API v1). The secondary key is only a spare for rotation; do not add it |
+| `ASW_BASE_URL` | for sea routes | Private URL of your auto-sea-way service, e.g. `http://asw.railway.internal:3000` |
+| `ASW_API_KEY` | for sea routes | A long random value you choose. Set the **same** value on the auto-sea-way service |
 | `CORS_ORIGINS`, `HOME_COUNTRY_ISO3`, `TRADE_YEARS_BACK`, `COMTRADE_*` | optional | See `backend/app/config.py` |
 
 No key is ever sent to the browser. Error messages and logs never print keys, and cached request keys strip any
@@ -131,6 +134,11 @@ never overwrites edits made in the app.
 ```
 # Maersk Developer Portal app (Locations + Commodities). Consumer Secret is not used.
 MAERSK_CONSUMER_KEY=
+# WTO API portal, Timeseries API v1 (primary key)
+WTO_API_KEY=
+# Self-hosted auto-sea-way (private network URL + shared key)
+ASW_BASE_URL=
+ASW_API_KEY=
 # Optional
 ANTHROPIC_MODEL_FAST=claude-haiku-5-5
 ANTHROPIC_MODEL_BRIEF=claude-haiku-5-5
@@ -138,3 +146,31 @@ LLM_DAILY_LIMIT_PER_USER=50
 CENSUS_API_KEY=
 FEATURE_WEB_CONTEXT=true
 ```
+
+## WTO tariffs
+
+* With `WTO_API_KEY` set, the tariff connector reads the latest WTO HS6 MFN simple average for EU and other
+  non-US markets first. WITS is used only when WTO has no figure. The US still uses USITC.
+* The maximum rate and any non-ad-valorem lines appear as caveats on the rate. The WTO "lowest preferential"
+  figure is stored for information only. It is not specific to an origin, so it is never used as a duty.
+* Indicator and reporter codes are looked up by name from the WTO API. If WTO renames an indicator, the
+  connector stops with a clear error instead of guessing.
+
+## Sea routes (auto-sea-way)
+
+auto-sea-way is a separate service you run. It computes water paths and distances from OpenStreetMap
+coastlines. It gives **no** prices, schedules, transit times or depth checks.
+
+Railway setup (needs your approval: it is a second service with its own monthly cost):
+1. New service → Docker image `ghcr.io/auto-sea-way/asw:0.10.0-full`. Pin this exact tag.
+2. Memory: at least 4 GB. Locally it used about 360 MB after three routes, because the graph is memory-mapped.
+   Plan for growth under load.
+3. Variable `ASW_API_KEY` = your random value. Health check path `/ready`. No public domain: use private networking.
+4. On the backend service, set `ASW_BASE_URL=http://<service-name>.railway.internal:3000` and the same
+   `ASW_API_KEY`. Deploy both.
+5. Check: Data admin → Integration health shows "asw" configured; Logistics → Sea route distance computes a route.
+
+Local check: `docker run -d --name asw-local -e ASW_API_KEY=<local value> -p 3000:3000 ghcr.io/auto-sea-way/asw:0.10.0-full`.
+
+Routes are cached for 30 days per graph version. A new graph release recomputes them. If the service is down,
+the sea-route panel says so and everything else keeps working.

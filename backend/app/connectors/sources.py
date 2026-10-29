@@ -408,6 +408,7 @@ def load_usitc(db: Session, hs6: str) -> list[Tariff]:
             importer_iso3="USA",
             hs_code=line["htsno"].replace(".", "")[:10],
             source="usitc",
+            data_year=datetime.now(UTC).year,  # the HTS in force today
             source_url=f"https://hts.usitc.gov/search?query={line['htsno']}",
             source_record_id=src.id,
             agreement="",

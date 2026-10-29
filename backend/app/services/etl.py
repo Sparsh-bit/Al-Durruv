@@ -4,7 +4,7 @@ import logging
 import threading
 from datetime import UTC, date, datetime
 
-from app.connectors import sources
+from app.connectors import sources, wto
 from app.connectors.http import ConnectorError
 from app.db import SessionLocal
 from app.models import RefreshRun
@@ -89,8 +89,15 @@ def _dispatch(db, connector: str, p: dict, skipped: list[str] | None = None) -> 
                         total += len(sources.load_usitc(db, hs))  # line rates + US-Jordan FTA; no WITS needed
                         db.commit()
                         continue
-                    mfn, year = sources.load_wits(db, market, hs)
-                    total += 1 if mfn else 0
+                    year = None
+                    if wto.configured():  # official WTO HS6 MFN rate, faster and more current than WITS
+                        rows = wto.load_tariffs(db, market, hs)
+                        total += len(rows)
+                        year = next((t.data_year for t in rows if t.rate_type == "MFN"), None)
+                        db.commit()
+                    if not year:
+                        mfn, year = sources.load_wits(db, market, hs)
+                        total += 1 if mfn else 0
                     db.commit()
                 except ConnectorError as exc:
                     db.rollback()

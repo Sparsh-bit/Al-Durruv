@@ -16,6 +16,7 @@ from app.models import (
     ApiCache,
     Company,
     CompanyEvidence,
+    FxRate,
     HSCode,
     ImportBatch,
     LogisticsQuote,
@@ -509,69 +510,106 @@ def freshness(_: CurrentUser, db: DB):
         for a in ("un_comtrade", *etl.CONNECTORS)
     }
     cached = dict(db.execute(select(ApiCache.adapter, func.count()).group_by(ApiCache.adapter)).all())
+    now = datetime.now(UTC)
+    fx_last = db.scalar(select(func.max(FxRate.day)))
     return {
+        "policy": {"max_age_days": MAX_AGE_DAYS, "max_period_lag_months": MAX_PERIOD_LAG_MONTHS},
         "sources": [
-            {
-                "key": "un_comtrade",
-                "name": "UN Comtrade (annual)",
-                "confidence": "official",
-                "last_retrieved": _iso(latest.get("un_comtrade")),
-                "last_run": last_runs["un_comtrade"],
-            },
-            {
-                "key": "comext",
-                "name": "Eurostat Comext (monthly EU)",
-                "confidence": "official",
-                "rows": monthly.get("comext", 0),
-                "latest_period": latest_month.get("comext"),
-                "last_retrieved": _iso(latest.get("comext")),
-                "last_run": last_runs["comext"],
-            },
-            {
-                "key": "census",
-                "name": "US Census (monthly US imports)",
-                "confidence": "official",
-                "rows": monthly.get("census", 0),
-                "latest_period": latest_month.get("census"),
-                "last_retrieved": _iso(latest.get("census")),
-                "last_run": last_runs["census"],
-                "needs": None if get_settings().census_api_key else "CENSUS_API_KEY",
-            },
-            {
-                "key": "tariffs",
-                "name": "Tariffs (WITS, USITC, overrides)",
-                "confidence": "official",
-                "rows": sum(tariffs_.values()),
-                "by_source": tariffs_,
-                "last_retrieved": _iso(max(filter(None, [latest.get("wits"), latest.get("usitc")]), default=None)),
-                "last_run": last_runs["tariffs"],
-            },
-            {
-                "key": "fx",
-                "name": "FX rates (ECB via Frankfurter)",
-                "confidence": "official",
-                "cached": cached.get("frankfurter", 0),
-                "last_run": last_runs["fx"],
-            },
-            {
-                "key": "shipments",
-                "name": "Shipment records (provider files)",
-                "confidence": "licensed",
-                "rows": db.scalar(select(func.count()).select_from(Shipment)),
-                "last_retrieved": _iso(db.scalar(select(func.max(ImportBatch.created_at)))),
-            },
-            {
-                "key": "freight",
-                "name": "Freight routes (admin, estimates)",
-                "confidence": "estimate",
-                "rows": db.scalar(select(func.count()).select_from(LogisticsQuote)),
-            },
-        ]
+            _staleness(src, now)
+            for src in [
+                {
+                    "key": "un_comtrade",
+                    "name": "UN Comtrade (annual)",
+                    "confidence": "official",
+                    "last_retrieved": _iso(latest.get("un_comtrade")),
+                    "last_run": last_runs["un_comtrade"],
+                },
+                {
+                    "key": "comext",
+                    "name": "Eurostat Comext (monthly EU)",
+                    "confidence": "official",
+                    "rows": monthly.get("comext", 0),
+                    "latest_period": latest_month.get("comext"),
+                    "last_retrieved": _iso(latest.get("comext")),
+                    "last_run": last_runs["comext"],
+                },
+                {
+                    "key": "census",
+                    "name": "US Census (monthly US imports)",
+                    "confidence": "official",
+                    "rows": monthly.get("census", 0),
+                    "latest_period": latest_month.get("census"),
+                    "last_retrieved": _iso(latest.get("census")),
+                    "last_run": last_runs["census"],
+                    "needs": None if get_settings().census_api_key else "CENSUS_API_KEY",
+                },
+                {
+                    "key": "tariffs",
+                    "name": "Tariffs (WTO, WITS, USITC, overrides)",
+                    "confidence": "official",
+                    "rows": sum(tariffs_.values()),
+                    "by_source": tariffs_,
+                    "last_retrieved": _iso(
+                        max(filter(None, [latest.get(k) for k in ("wits", "usitc", "wto")]), default=None)
+                    ),
+                    "last_run": last_runs["tariffs"],
+                },
+                {
+                    "key": "fx",
+                    "name": "FX rates (ECB via Frankfurter)",
+                    "confidence": "official",
+                    "cached": cached.get("frankfurter", 0),
+                    "last_retrieved": datetime.combine(fx_last, datetime.min.time(), UTC).isoformat()
+                    if fx_last
+                    else None,
+                    "last_run": last_runs["fx"],
+                },
+                {
+                    "key": "shipments",
+                    "name": "Shipment records (provider files)",
+                    "confidence": "licensed",
+                    "rows": db.scalar(select(func.count()).select_from(Shipment)),
+                    "last_retrieved": _iso(db.scalar(select(func.max(ImportBatch.created_at)))),
+                },
+                {
+                    "key": "freight",
+                    "name": "Freight routes (admin, estimates)",
+                    "confidence": "estimate",
+                    "rows": db.scalar(select(func.count()).select_from(LogisticsQuote)),
+                },
+            ]
+        ],
+        "fx_latest_day": fx_last.isoformat() if fx_last else None,
     }
 
 
 def _iso(v):
     return v.isoformat() if v else None
+
+
+# Data older than these limits is flagged as stale wherever it is shown (D19).
+MAX_AGE_DAYS = {"un_comtrade": 120, "comext": 45, "census": 45, "tariffs": 120, "fx": 10, "shipments": 120}
+MAX_PERIOD_LAG_MONTHS = {"comext": 6, "census": 6}
+
+
+def _staleness(src: dict, now: datetime) -> dict:
+    reasons = []
+    last = src.get("last_retrieved")
+    limit = MAX_AGE_DAYS.get(src["key"])
+    if limit and last:
+        age = (now - datetime.fromisoformat(last)).days
+        if age > limit:
+            reasons.append(f"last refreshed {age} days ago (limit {limit})")
+    period = src.get("latest_period")
+    lag_limit = MAX_PERIOD_LAG_MONTHS.get(src["key"])
+    if lag_limit and period:
+        y, m = map(int, period.split("-"))
+        lag = (now.year - y) * 12 + now.month - m
+        if lag > lag_limit:
+            reasons.append(f"latest month is {period} ({lag} months old)")
+    if limit and not last and src.get("rows"):
+        reasons.append("retrieval date unknown")
+    return {**src, "stale": bool(reasons), "stale_reasons": reasons, "max_age_days": limit}
 
 
 @router.get("/markets/{hs}/monthly")

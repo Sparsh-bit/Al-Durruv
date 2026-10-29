@@ -155,3 +155,17 @@ Extended screens:
   in Logistics, with 0 console errors on 9 pages.
 * **Blocked:** the live Commodities and Locations calls. `MAERSK_CONSUMER_KEY` is not configured in this
   runtime.
+
+## 2026-10-29: WTO tariffs, sea routes, freshness policy
+
+* WTO Timeseries tariffs (MFN average, maximum and non-ad-valorem line caveats; lowest preferential rate for
+  information only). WTO is tried before WITS for non-US markets.
+* Sea-route distance on Logistics, from self-hosted auto-sea-way: water path drawn as plain SVG (no map tiles),
+  canals on or off, and an optional sailing-time estimate at a stated speed.
+* Freshness policy: stale flags on Overview and in Data admin. `docs/ARCHITECTURE.md` added.
+* Tests: **106 passed**. The new sea-route tests found and fixed a bug: the cache tag was being sent to the
+  routing service as a query parameter.
+* **Live test, auto-sea-way (passed, local container, graph `0.9.0 2026-10-04`):** Alexandria to Houston
+  6,469.9 nm; Aqaba to Rotterdam 3,610.7 nm via Suez and 11,284.8 nm with canals off. Each took under 1 s.
+* **Blocked:** the live WTO call (`WTO_API_KEY` is not in this runtime) and the live Maersk and Census checks
+  (the variables were staged in Railway but not yet deployed).

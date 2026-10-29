@@ -351,3 +351,57 @@ def delete_location(loc_id: int, user: Admin, db: DB):
     audit.record(db, user, "delete", "route_location", r.id, f"{r.location_name} (used by {in_use} quotes)")
     db.delete(r)
     db.commit()
+
+
+# --- sea routes (self-hosted auto-sea-way) ------------------------------------------------------------
+
+
+def _latlon(loc: RouteLocation) -> tuple[float, float]:
+    raw = loc.raw or {}
+    lat, lon = raw.get("latitude"), raw.get("longitude")
+    if lat in (None, "") or lon in (None, ""):
+        raise HTTPException(
+            422, f"Maersk gives no coordinates for {loc.location_name}; choose a terminal or city that has them."
+        )
+    return float(lat), float(lon)
+
+
+@router.get("/sea-routes")
+def sea_route(
+    _: CurrentUser,
+    db: DB,
+    origin_location_id: int,
+    destination_location_id: int,
+    canals: bool = True,
+    shore_buffer_nm: float = Query(0.0, ge=0, le=5),
+    speed_knots: float | None = Query(None, ge=1, le=40),
+):
+    """Sea distance between two saved Maersk route locations. Sailing time only when the user states a speed,
+    and then labelled as an estimate with that assumption."""
+    from app.connectors import seaway
+    from app.connectors.http import ConnectorError
+
+    o, d = db.get(RouteLocation, origin_location_id), db.get(RouteLocation, destination_location_id)
+    if not o or not d:
+        raise HTTPException(404, "Save both locations from the Maersk location search first.")
+    if o.id == d.id:
+        raise HTTPException(422, "Origin and destination are the same location.")
+    try:
+        r = seaway.route(db, _latlon(o), _latlon(d), canals=canals, shore_buffer_nm=shore_buffer_nm)
+        db.commit()
+    except ConnectorError as exc:
+        raise HTTPException(503, str(exc)) from None
+    out = {
+        **r,
+        "origin": _route_out(o),
+        "destination": _route_out(d),
+        "coordinates_source": "Maersk Locations API v4 (latitude/longitude of the saved locations)",
+    }
+    if speed_knots:
+        out["sailing_time_estimate"] = {
+            "days": seaway.sailing_days(r["distance_nm"], speed_knots),
+            "assumption": f"Continuous sailing at {speed_knots:g} knots; excludes port time, canal waits and "
+            "transshipment. Estimate, not a carrier transit time.",
+            "confidence": "estimate",
+        }
+    return out

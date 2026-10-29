@@ -52,6 +52,24 @@ def sources(_: CurrentUser, db: DB):
             "companies": db.scalar(select(func.count()).select_from(Company)),
         },
         {
+            "key": "wto",
+            "name": "WTO Timeseries API (official HS6 MFN tariffs)",
+            "status": "connected" if s.wto_api_key else "not_configured",
+            "detail": "Subscription key configured on the server. Used for MFN rates; origin preferences come from "
+            "WITS/USITC and admin overrides."
+            if s.wto_api_key
+            else "Add WTO_API_KEY (your primary key) to the backend environment.",
+        },
+        {
+            "key": "asw",
+            "name": "Sea routes (self-hosted auto-sea-way)",
+            "status": "connected" if s.asw_base_url and s.asw_api_key else "not_configured",
+            "detail": "Routing service configured (OpenStreetMap-based graph). Distances only: no prices, depth or "
+            "schedules."
+            if s.asw_base_url and s.asw_api_key
+            else "Deploy the auto-sea-way service and set ASW_BASE_URL and ASW_API_KEY on the backend.",
+        },
+        {
             "key": "maersk",
             "name": "Maersk Locations and Commodities (reference data)",
             "status": "connected" if s.maersk_consumer_key else "not_configured",

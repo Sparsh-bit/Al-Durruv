@@ -96,7 +96,10 @@ export default function Overview() {
                   <span className="block truncate text-ink-900">{src.name}</span>
                   <span className="text-muted">{src.latest_period ? `to ${src.latest_period} · ` : ''}{src.last_retrieved ? date(src.last_retrieved) : src.needs ? `needs ${src.needs}` : 'not loaded'}</span>
                 </span>
-                <Badge tone={src.confidence === 'official' ? 'green' : src.confidence === 'licensed' ? 'blue' : 'amber'}>{src.confidence}</Badge>
+                <span className="flex shrink-0 gap-1">
+                  {src.stale && <Badge tone="red">stale</Badge>}
+                  <Badge tone={src.confidence === 'official' ? 'green' : src.confidence === 'licensed' ? 'blue' : 'amber'}>{src.confidence}</Badge>
+                </span>
               </li>
             ))}
           </ul>

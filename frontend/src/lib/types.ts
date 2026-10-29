@@ -353,7 +353,7 @@ export type Tariff = {
 
 export type AlertItem = { id: number; type: string; title: string; company_id: number | null; hs_code: string; payload: Record<string, unknown>; created_at: string; read_at: string | null }
 
-export type SourceFreshness = { key: string; name: string; confidence: string; rows?: number; latest_period?: string | null; last_retrieved?: string | null; last_run?: Run | null; needs?: string | null; by_source?: Record<string, number>; cached?: number }
+export type SourceFreshness = { key: string; name: string; confidence: string; stale?: boolean; stale_reasons?: string[]; max_age_days?: number | null; rows?: number; latest_period?: string | null; last_retrieved?: string | null; last_run?: Run | null; needs?: string | null; by_source?: Record<string, number>; cached?: number }
 
 export type Requirement = { id: number; title: string; detail: string; source_url: string; status: 'todo' | 'in_progress' | 'met' | 'not_applicable'; market_iso3: string; verified_at: string | null }
 export type RetailerPath = {
@@ -501,3 +501,21 @@ export type MaerskLocation = {
 }
 export type LocationSearch = { results: MaerskLocation[]; next_page: string | null; retrieved_at: string; source: string; ambiguous: boolean; message: string | null }
 export type RouteLocation = MaerskLocation & { id: number; country_iso3: string; source: string; retrieved_at: string }
+
+export type SeaRoute = {
+  distance_nm: number
+  distance_km: number
+  geometry: { type: 'LineString'; coordinates: [number, number][] } | null
+  land_legs: number[]
+  canals: boolean
+  shore_buffer_nm: number
+  graph_version: string
+  computed_at: string | null
+  source: string
+  confidence: string
+  caveats: string[]
+  origin: RouteLocation
+  destination: RouteLocation
+  coordinates_source: string
+  sailing_time_estimate?: { days: number; assumption: string; confidence: string }
+}
