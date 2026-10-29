@@ -11,7 +11,7 @@ from sqlalchemy import text
 
 from app.config import get_settings
 from app.db import SessionLocal
-from app.routers import admin, ai, auth, catalogue, client, companies, intel, markets, reports
+from app.routers import admin, ai, auth, catalogue, client, companies, intel, maersk, markets, reports
 from app.services import jobs
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -61,6 +61,8 @@ async def security_headers(request: Request, call_next):
     h.setdefault("X-Content-Type-Options", "nosniff")
     h.setdefault("X-Frame-Options", "DENY")
     h.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    h.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
+    h.setdefault("Cross-Origin-Opener-Policy", "same-origin")
     h.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
     if settings.is_production:
         h.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
@@ -95,7 +97,7 @@ def health():
     }
 
 
-for r in (auth, catalogue, markets, companies, ai, reports, admin, client, intel):
+for r in (auth, catalogue, markets, companies, ai, reports, admin, client, intel, maersk):
     app.include_router(r.router)
 
 # Catalogue page images (public marketing material; no auth so <img> tags can load them).

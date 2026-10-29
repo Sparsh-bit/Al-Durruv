@@ -48,6 +48,7 @@ EXPORT_COLUMNS = [
     "client_hs_source",
     "hs_code",
     "hs_status",
+    "hs_source",
     "hs_reviewed_at",
     "ingredients",
     "processing",
@@ -174,6 +175,8 @@ def _out(p: Product, has_data: bool = False, valid: set[str] | None = None) -> d
         "hs_description": p.hs.description if p.hs else "",
         "client_hs_code": p.client_hs_code,
         "client_hs_source": p.client_hs_source,
+        "hs_source": p.hs_source,
+        "maersk_commodity": p.maersk_commodity,
         "hs_reviewed_at": p.hs_reviewed_at,
         "hs_check": hs_check(p, valid),
         "has_trade_data": has_data,
@@ -262,6 +265,10 @@ def update_product(product_id: int, body: ProductIn, user: Analyst, db: DB):
         raise HTTPException(403, "Only an administrator can change a product's HS mapping (use HS review).")
     if fields["hs_code"] != p.hs_code and fields["hs_status"] == HsStatus.confirmed:
         fields["hs_status"] = HsStatus.candidate  # a changed code must be confirmed again through review
+    if fields["hs_code"] != p.hs_code:
+        p.hs_source = (
+            "client" if fields["hs_code"] and hs6_of(p.client_hs_code) == fields["hs_code"] else "classification_review"
+        )
     changed = [k for k, v in fields.items() if getattr(p, k) != v]
     for k, v in fields.items():
         setattr(p, k, v)
@@ -306,6 +313,7 @@ def review_hs(product_id: int, body: HsReviewIn, user: Admin, db: DB):
         raise HTTPException(422, f"HS code {body.hs_code} is not a valid HS6 code in the UN Comtrade classification.")
     before = f"{p.hs_code or '-'} {p.hs_status}"
     p.hs_code, p.hs_status = body.hs_code, body.status
+    p.hs_source = "client" if body.hs_code and hs6_of(p.client_hs_code) == body.hs_code else "classification_review"
     if body.note:
         p.hs_note = body.note
     p.hs_reviewed_by, p.hs_reviewed_at = user.id, func.now()

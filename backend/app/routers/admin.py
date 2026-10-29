@@ -14,6 +14,7 @@ from app.models import (
     Company,
     LogisticsQuote,
     RefreshRun,
+    RouteLocation,
     SourceRecord,
     TradeObservation,
 )
@@ -50,6 +51,14 @@ def sources(_: CurrentUser, db: DB):
             else "Set ANTHROPIC_API_KEY in .env to enable AI features.",
             "companies": db.scalar(select(func.count()).select_from(Company)),
         },
+        {
+            "key": "maersk",
+            "name": "Maersk Locations and Commodities (reference data)",
+            "status": "connected" if s.maersk_consumer_key else "not_configured",
+            "detail": "Consumer-Key configured on the server. Reference data only: no prices, schedules or rulings."
+            if s.maersk_consumer_key
+            else "Add MAERSK_CONSUMER_KEY to the backend environment to enable location and commodity lookups.",
+        },
         SHIPMENTS,
         FREIGHT,
     ]
@@ -82,6 +91,8 @@ class QuoteIn(BaseModel):
     origin: str = Field(min_length=2, max_length=120)
     origin_iso3: str = Field("", pattern="^([A-Za-z]{3})?$")
     payload_kg: float | None = Field(None, gt=0, le=100000)
+    origin_location_id: int | None = None
+    destination_location_id: int | None = None
     destination: str = Field(min_length=2, max_length=120)
     destination_iso3: str = Field(min_length=3, max_length=3)
     mode: str = Field(pattern="^(sea|air|road|rail)$")
@@ -102,6 +113,8 @@ def _quote(q: LogisticsQuote) -> dict:
         "origin_iso3": q.origin_iso3,
         "payload_kg": q.payload_kg,
         "cost_per_kg": q.cost_usd / q.payload_kg if q.cost_usd is not None and q.payload_kg else None,
+        "origin_location_id": q.origin_location_id,
+        "destination_location_id": q.destination_location_id,
         "destination": q.destination,
         "destination_iso3": q.destination_iso3,
         "mode": q.mode,
@@ -128,6 +141,9 @@ def logistics(_: CurrentUser, db: DB, destination_iso3: str | None = None):
 
 @router.post("/logistics", status_code=201)
 def add_quote(body: QuoteIn, user: Admin, db: DB):
+    for loc_id in (body.origin_location_id, body.destination_location_id):
+        if loc_id and not db.get(RouteLocation, loc_id):
+            raise HTTPException(422, "Unknown route location; save it from the Maersk location search first.")
     q = LogisticsQuote(
         **{
             **body.model_dump(),

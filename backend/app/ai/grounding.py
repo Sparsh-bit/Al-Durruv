@@ -18,7 +18,8 @@ from app.analytics import cagr
 from app.models import Company, LogisticsQuote, MarketNews, Product, TargetMarket
 from app.services import settings, trade
 
-LABELS = ("verified", "client_provided", "estimate", "inference", "unavailable")
+LABELS = ("verified", "client_provided", "calculated", "estimate", "inference", "unavailable")
+CALC_KINDS = ("score", "trade_stat")
 CLIENT_KINDS = ("client", "catalogue")
 REL_TOL = 0.02  # rounding tolerance, e.g. $2.40B vs 2,404,909,000
 
@@ -111,6 +112,8 @@ def validate_statements(statements: list[dict], evidence: list[Evidence]) -> lis
         label = s.get("label") if s.get("label") in LABELS else "inference"
         if label == "verified" and not ids:
             label = "inference"
+        if label == "calculated" and not any(by_id[i].kind in CALC_KINDS for i in ids):
+            label = "inference"  # a calculated value must cite the platform's computed evidence
         if label == "client_provided" and not any(by_id[i].kind in CLIENT_KINDS for i in ids):
             label = "inference"  # nothing from the client's own information was cited
         cited_values = [v for i in ids for v in by_id[i].values]
@@ -251,6 +254,28 @@ def _add_client(db: Session, add, hs: str) -> None:
             ),
             [],
         )
+        sources = sorted({x.hs_source for x in products})
+        add(
+            "catalogue",
+            f"Source of the analysis HS6 {hs}: {', '.join(s.replace('_', ' ') for s in sources)} "
+            "(none of these is a customs ruling).",
+            [],
+        )
+        for x in products[:10]:
+            m = x.maersk_commodity
+            if m:
+                add(
+                    "maersk_reference",
+                    f"Maersk commodity reference chosen by a reviewer for {x.name}: {m['commodity_code']} "
+                    f'"{m["commodity_name"]}", HS codes listed by Maersk: '
+                    f"{', '.join(h['code'] for h in m.get('hs_codes', [])) or 'none'}. Carrier reference data, "
+                    "not a customs classification.",
+                    [],
+                    {
+                        "url": "https://developer.maersk.com/api-catalogue/Commodities",
+                        "retrieved_at": m.get("retrieved_at"),
+                    },
+                )
         priority = sorted({x.priority_category for x in products if x.priority_category})
         if priority:
             add("client", f"Client priority private-label categories covered: {', '.join(priority)}.", [])
@@ -317,11 +342,26 @@ def _add_news(db: Session, add, hs: str) -> None:
         )
 
 
+def _route_text(db: Session, q: LogisticsQuote) -> str:
+    from app.models import RouteLocation
+
+    parts = []
+    for label, loc_id in (("origin", q.origin_location_id), ("destination", q.destination_location_id)):
+        loc = db.get(RouteLocation, loc_id) if loc_id else None
+        if loc:
+            parts.append(
+                f"{label} {loc.location_name} (Maersk Geo ID {loc.carrier_geo_id}"
+                f"{', UN/LOCODE ' + loc.un_location_code if loc.un_location_code else ''})"
+            )
+    return (" Route locations from the Maersk Locations API: " + "; ".join(parts) + ".") if parts else ""
+
+
 def _add_logistics(db: Session, add, destination_iso3: str | None = None) -> None:
     stmt = select(LogisticsQuote).order_by(LogisticsQuote.created_at.desc()).limit(10)
     if destination_iso3:
         stmt = stmt.where(LogisticsQuote.destination_iso3 == destination_iso3)
     for q in db.scalars(stmt):
+        route = _route_text(db, q)
         add(
             "logistics",
             f"Client-provided freight quote {q.origin} → {q.destination} ({q.destination_iso3}) by {q.mode}"
@@ -329,7 +369,8 @@ def _add_logistics(db: Session, add, destination_iso3: str | None = None) -> Non
             f"{', ' + q.incoterm if q.incoterm else ''}: "
             f"{fmt_usd(q.cost_usd) if q.cost_usd is not None else 'cost not given'}, "
             f"{q.transit_days if q.transit_days is not None else 'transit time not given'} days. "
-            f"Source: {q.source_note}.{' Assumptions: ' + q.assumptions if q.assumptions else ''}",
+            f"Source: {q.source_note}.{' Assumptions: ' + q.assumptions if q.assumptions else ''}{route} "
+            "Freight figures are estimates, not live prices.",
             [q.cost_usd, q.transit_days],
         )
     add("gap", f"{FREIGHT['name']}: not connected. {FREIGHT['detail']}", [])

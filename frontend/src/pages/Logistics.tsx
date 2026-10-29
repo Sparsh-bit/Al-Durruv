@@ -6,7 +6,8 @@ import { Badge, Button, Card, CardHeader, EmptyState, Field, Input, Modal, Notic
 import { api, del, post } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { date, usd } from '../lib/format'
-import type { Provider, Quote } from '../lib/types'
+import type { Provider, Quote, RouteLocation } from '../lib/types'
+import RouteLocations from '../components/RouteLocations'
 
 const EMPTY = {
   origin: '',
@@ -23,6 +24,8 @@ const EMPTY = {
   source_note: '',
   assumptions: '',
   valid_until: '',
+  origin_location_id: '',
+  destination_location_id: '',
 }
 const INCOTERMS = ['', 'EXW', 'FCA', 'FOB', 'CFR', 'CIF', 'CPT', 'CIP', 'DAP', 'DPU', 'DDP']
 
@@ -30,6 +33,15 @@ function QuoteForm({ onDone }: { onDone: () => void }) {
   const qc = useQueryClient()
   const [f, setF] = useState(EMPTY)
   const set = (k: keyof typeof EMPTY) => (e: { target: { value: string } }) => setF((s) => ({ ...s, [k]: e.target.value }))
+  const locations = useQuery({ queryKey: ['route-locations'], queryFn: () => api<RouteLocation[]>('/api/route-locations') })
+  const pickLocation = (side: 'origin' | 'destination', id: string) => {
+    const l = locations.data?.find((x) => String(x.id) === id)
+    setF((s) => ({
+      ...s,
+      [`${side}_location_id`]: id,
+      ...(l ? { [side]: l.location_name || l.city_name, ...(side === 'destination' ? { destination_iso3: l.country_iso3 } : {}) } : {}),
+    }))
+  }
   const save = useMutation({
     mutationFn: () =>
       post<Quote>('/api/logistics', {
@@ -39,6 +51,8 @@ function QuoteForm({ onDone }: { onDone: () => void }) {
         payload_kg: f.payload_kg === '' ? null : Number(f.payload_kg),
         transit_days: f.transit_days === '' ? null : Number(f.transit_days),
         valid_until: f.valid_until ? new Date(f.valid_until).toISOString() : null,
+        origin_location_id: f.origin_location_id ? Number(f.origin_location_id) : null,
+        destination_location_id: f.destination_location_id ? Number(f.destination_location_id) : null,
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['logistics'] })
@@ -53,6 +67,18 @@ function QuoteForm({ onDone }: { onDone: () => void }) {
   return (
     <form onSubmit={submit} className="space-y-4">
       <Notice>Enter only quotes you actually received (from a forwarder, carrier or platform). They are labelled <b>Client-provided</b> everywhere.</Notice>
+      {(locations.data?.length ?? 0) > 0 && (
+        <div className="grid gap-4 sm:grid-cols-2">
+          {(['origin', 'destination'] as const).map((side) => (
+            <Field key={side} label={`${side === 'origin' ? 'Origin' : 'Destination'} from saved Maersk locations`}>
+              <Select value={f[`${side}_location_id`]} onChange={(e) => pickLocation(side, e.target.value)}>
+                <option value="">Not linked</option>
+                {locations.data!.map((l) => <option key={l.id} value={l.id}>{l.location_name || l.city_name} · {l.un_location_code || l.carrier_geo_id} · {l.country_code}</option>)}
+              </Select>
+            </Field>
+          ))}
+        </div>
+      )}
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Origin (port or city)"><Input required minLength={2} value={f.origin} onChange={set('origin')} placeholder="e.g. Alexandria" /></Field>
         <Field label="Factory country (ISO3)" hint="EGY, JOR or SYR: used for landed cost"><Input maxLength={3} pattern="[A-Za-z]{3}" value={f.origin_iso3} onChange={set('origin_iso3')} className="font-mono uppercase" /></Field>
@@ -156,6 +182,7 @@ export default function Logistics() {
         ))}
       </div>
       <Comparison quotes={data.data?.quotes ?? []} />
+      <RouteLocations />
       <Card>
         <CardHeader title="Client-provided quotes" subtitle="Shown in market detail and cited by the AI analyst as labelled estimates" />
         {data.isLoading ? (

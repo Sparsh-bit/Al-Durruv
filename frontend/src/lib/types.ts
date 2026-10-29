@@ -21,6 +21,8 @@ export type Product = {
   hs_description: string
   client_hs_code: string
   client_hs_source: string
+  hs_source: 'client' | 'classification_review' | 'maersk_reference'
+  maersk_commodity: (MaerskCommodity & { selected_hs: string | null; retrieved_at: string; selected_by: string; selected_at: string; source: string }) | null
   hs_reviewed_at: string | null
   hs_check: { client_hs6: string; matches_client: boolean; issues: string[] }
   name_ar: string
@@ -409,7 +411,7 @@ export type AppSettings = {
   ai_monthly_budget_usd: number
 }
 
-export type Label = 'verified' | 'client_provided' | 'estimate' | 'inference' | 'unavailable' | 'unverified'
+export type Label = 'verified' | 'client_provided' | 'calculated' | 'estimate' | 'inference' | 'unavailable' | 'unverified'
 export type Statement = { text: string; label: Label; evidence_ids: string[]; issues: string[] }
 export type Evidence = { id: string; kind: string; text: string; values: number[]; source: Source | null }
 
@@ -451,6 +453,8 @@ export type Quote = {
   origin_iso3: string
   payload_kg: number | null
   cost_per_kg: number | null
+  origin_location_id: number | null
+  destination_location_id: number | null
   destination: string
   destination_iso3: string
   mode: string
@@ -465,3 +469,35 @@ export type Quote = {
   valid_until: string | null
   created_at: string
 }
+
+export type MaerskCommodity = {
+  commodity_code: string
+  commodity_name: string
+  cargo_types: string[]
+  has_us_flag: boolean
+  hs_codes: { code: string; name: string }[]
+}
+export type ProductCommodities = {
+  product: { id: number; name: string }
+  codes: { source: string; label: string; code: string | null; hs6?: string | null; status?: string }[]
+  selected: Product['maersk_commodity']
+  candidates: (MaerskCommodity & { matched_by: string; matches_client_hs6: boolean; matches_analysis_hs6: boolean })[]
+  ambiguous: boolean
+  searches: { by: string; term: string; results: number; retrieved_at: string }[]
+  message: string | null
+  disclaimer: string
+}
+export type MaerskLocation = {
+  carrier_geo_id: string
+  un_location_code: string
+  location_name: string
+  location_type: string
+  city_name: string
+  country_code: string
+  country_name: string
+  region_name: string
+  has_cy_service: boolean | null
+  saved?: boolean
+}
+export type LocationSearch = { results: MaerskLocation[]; next_page: string | null; retrieved_at: string; source: string; ambiguous: boolean; message: string | null }
+export type RouteLocation = MaerskLocation & { id: number; country_iso3: string; source: string; retrieved_at: string }

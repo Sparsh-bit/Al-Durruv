@@ -6,8 +6,9 @@ import { toast } from 'sonner'
 import { api, post } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { dateTime, pageImage } from '../lib/format'
-import { HS_STATUS } from '../lib/labels'
+import { HS_SOURCE, HS_STATUS } from '../lib/labels'
 import type { Clarification, HsStatus, Product } from '../lib/types'
+import MaerskCommodities from './MaerskCommodities'
 import { HsPicker } from './ProductForm'
 import { Badge, Button, Card, Drawer, Field, Select, Textarea } from './ui'
 
@@ -133,6 +134,7 @@ export default function ProductDrawer({ product, siblings, onClose, onEdit }: {
                 <div className="micro text-muted">HS6 used for analysis</div>
                 <div className="num mt-1.5 text-[19px] text-ink-900">{p.hs_code ?? <span className="text-muted">unmapped</span>}</div>
                 {p.hs_description && <div className="mt-1 line-clamp-2 text-[11.5px] leading-snug text-muted">{p.hs_description}</div>}
+                <div className="mt-1 text-[11px] text-brand-700">{HS_SOURCE[p.hs_source] ?? p.hs_source}</div>
               </div>
             </div>
             {p.hs_check.issues.length > 0 && (
@@ -160,6 +162,8 @@ export default function ProductDrawer({ product, siblings, onClose, onEdit }: {
                 </div>
               ))}
           </Card>
+
+          <MaerskCommodities p={p} />
 
           {mine.length > 0 && (
             <Card>

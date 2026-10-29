@@ -1,0 +1,6 @@
+{"commodities": [
+  {"commodityCode": "000101", "commodityName": "Berries, frozen", "cargoTypes": ["REEFER"], "hasUSFlag": false,
+   "hsCommodityCodes": [{"hsCommodityCode": "081120", "hsCommodityName": "Raspberries, blackberries, mulberries, frozen"}]},
+  {"commodityCode": "000903", "commodityName": "Tomato paste", "cargoTypes": ["DRY"], "hasUSFlag": false,
+   "hsCommodityCodes": [{"hsCommodityCode": "200290", "hsCommodityName": "Tomatoes, prepared or preserved"}]}
+]}

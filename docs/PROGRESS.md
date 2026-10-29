@@ -134,3 +134,24 @@ Extended screens:
 * Several US tariff lines can sit under one HS6 (2103.90: 0–7.5%). Landed cost now uses the highest rate, lists
   the lines and says to confirm the exact line. Test added.
 * Tests: 91 passed.
+
+## Maersk Locations and Commodities integration (29 Oct 2026)
+
+* Specs inspected: both OpenAPI documents (Commodities v1.1, Locations v4.0.2). Authentication is the
+  `Consumer-Key` header only; the Consumer Secret is not used.
+* Built:
+  - connector with cache, retries, timeouts and local rate limits
+  - product commodity review: candidates, match flags, reference saved without touching the client code,
+    optional admin use for analysis
+  - route-location search and saving (Geo ID and UN/LOCODE kept separately), linked to freight quotes
+  - AI evidence for the chosen reference and the route locations, plus a "calculated" label
+  - Integration health entry
+  - extra security headers (Permissions-Policy, COOP)
+* Migration `7c4d2e9f1a83`, tested up → down → up on a scratch copy: 33 products get source "client", 113
+  "classification review".
+* Tests: **101 passed**, including 10 Maersk tests with HTTP mocked from the spec's schema examples: header,
+  cache, errors (401, 404, 429, 400, 503), local limits, no key leaks, workflow and roles. Frontend type-check,
+  lint and build are clean. In the browser, the "not configured" states show correctly on the product panel and
+  in Logistics, with 0 console errors on 9 pages.
+* **Blocked:** the live Commodities and Locations calls. `MAERSK_CONSUMER_KEY` is not configured in this
+  runtime.

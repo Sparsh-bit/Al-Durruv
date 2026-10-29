@@ -28,9 +28,11 @@ class Settings(BaseSettings):
     llm_daily_limit_per_user: int = 50
     research_max_searches: int = 5
     feature_web_context: bool = True  # AI web research for companies and news (untrusted, cited)
-    feature_maersk_schedules: bool = False
 
     census_api_key: str = ""
+    # Maersk Developer Portal app: Locations and Commodities APIs authenticate with the Consumer Key header only.
+    # The portal's Consumer Secret is not used by either API.
+    maersk_consumer_key: str = ""
     http_timeout_s: float = 60.0
 
     comtrade_subscription_key: str = ""

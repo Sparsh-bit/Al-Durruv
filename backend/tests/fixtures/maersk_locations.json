@@ -1,0 +1,7 @@
+[{"countryCode": "US", "countryName": "United States", "UNLocationCode": "USHOU", "cityName": "Houston",
+  "UNRegionCode": "TX", "UNRegionName": "Texas", "locationType": "TERMINAL", "locationName": "Houston Terminal C4",
+  "carrierGeoID": "0UGZOU2O902YE", "hasCYService": true, "smdgFacilityCode": "CNQINQQCTN",
+  "latitude": "6.421800", "longitude": "3.343700"},
+ {"countryCode": "US", "countryName": "United States", "UNLocationCode": "USHOU", "cityName": "Houston",
+  "UNRegionCode": "TX", "UNRegionName": "Texas", "locationType": "CITY", "locationName": "Houston",
+  "carrierGeoID": "1ABCDEFGHIJKL", "hasCYService": false}]

@@ -172,6 +172,7 @@ def apply_hs_list(db: Session, path: Path = HS_LIST, brand: str = "") -> dict:
             p.name_ar = p.name_ar or r["name_ar"]
             p.priority_category = p.priority_category or r["priority_category"]
             p.hs_code, p.hs_status, p.hs_note = hs6, status, r["finding"]
+            p.hs_source = "client" if hs6 and hs6_of(r["client_hs_code"]) == hs6 else "classification_review"
             updated += 1
         db.flush()
         client6 = hs6_of(r["client_hs_code"])

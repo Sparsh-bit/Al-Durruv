@@ -89,6 +89,13 @@ class Product(Base):
     hs_note: Mapped[str] = mapped_column(Text, default="", server_default="")
     client_hs_code: Mapped[str] = mapped_column(String(14), default="", server_default="")
     client_hs_source: Mapped[str] = mapped_column(Text, default="", server_default="")
+    # where the analysis HS6 came from: client (their own code), classification_review (an analyst's review),
+    # maersk_reference (a Maersk Commodities API suggestion chosen by a reviewer). None is a customs ruling.
+    hs_source: Mapped[str] = mapped_column(
+        String(30), default="classification_review", server_default="classification_review"
+    )
+    # reviewer-selected Maersk commodity reference (code, name, HS codes, retrieved_at, selected_by/at)
+    maersk_commodity: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     hs_reviewed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     hs_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     name_ar: Mapped[str] = mapped_column(String(255), default="", server_default="")
@@ -390,6 +397,28 @@ class Brief(Base):
     created_at: Mapped[datetime] = _now()
 
 
+class RouteLocation(Base):
+    """A location chosen from the Maersk Locations API for shipment routes. Geo ID and UN/LOCODE are kept
+    separately: they are different identifier systems."""
+
+    __tablename__ = "route_locations"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    carrier_geo_id: Mapped[str] = mapped_column(String(13), unique=True)
+    un_location_code: Mapped[str] = mapped_column(String(5), default="")
+    location_name: Mapped[str] = mapped_column(Text, default="")
+    location_type: Mapped[str] = mapped_column(String(40), default="")
+    city_name: Mapped[str] = mapped_column(Text, default="")
+    country_code: Mapped[str] = mapped_column(String(2), default="")
+    country_iso3: Mapped[str] = mapped_column(String(3), default="")
+    country_name: Mapped[str] = mapped_column(Text, default="")
+    region_name: Mapped[str] = mapped_column(Text, default="")
+    has_cy_service: Mapped[bool | None] = mapped_column(nullable=True)
+    raw: Mapped[dict] = mapped_column(JSONB, default=dict)
+    source: Mapped[str] = mapped_column(String(40), default="maersk_locations_v4")
+    retrieved_at: Mapped[datetime] = _now()
+    saved_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+
+
 class LogisticsQuote(Base):
     """Freight quote from a connected provider or entered by the client (labelled)."""
 
@@ -398,6 +427,12 @@ class LogisticsQuote(Base):
     origin: Mapped[str] = mapped_column(String(120))
     origin_iso3: Mapped[str] = mapped_column(String(3), default="", server_default="")
     payload_kg: Mapped[float | None] = mapped_column(Float, nullable=True)  # cargo per container, for $/kg
+    origin_location_id: Mapped[int | None] = mapped_column(
+        ForeignKey("route_locations.id", ondelete="SET NULL"), nullable=True
+    )
+    destination_location_id: Mapped[int | None] = mapped_column(
+        ForeignKey("route_locations.id", ondelete="SET NULL"), nullable=True
+    )
     destination: Mapped[str] = mapped_column(String(120))
     destination_iso3: Mapped[str] = mapped_column(String(3), index=True)
     mode: Mapped[str] = mapped_column(String(20))  # sea, air, road, rail

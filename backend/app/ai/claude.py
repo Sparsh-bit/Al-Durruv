@@ -36,12 +36,17 @@ Rules you must follow:
                     an official company page, a cited article)
   client_provided = stated by the client's own information (company profile, catalogue, HS list, entities);
                     not independently verified
+  calculated      = a value the platform computed from sourced data (scores, shares, growth, unit values)
+                    and cited from that evidence
   estimate        = a modelled figure that is explicitly an estimate in the evidence
-  inference       = a hypothesis or recommendation reasoned from the evidence (no new numbers)
+  inference       = an assumption, hypothesis or recommendation reasoned from the evidence (no new numbers)
   unavailable     = unknown: the information needed is not in the evidence (say what is missing)
 - Never state or imply that anyone has contacted a company, applied to a vendor programme, sent samples or
   agreed terms unless the evidence records it. Suggest such steps as next actions instead.
 - An HS code marked candidate or insufficient information is not customs-certain; say so when it matters.
+  Maersk commodity references are carrier reference data, never a customs classification.
+- Never invent HS codes, freight prices, transit times, buyer identities, purchase volumes, competitor
+  shipments or retailer purchasing intentions. Freight figures in the evidence are estimates.
 - Country-level import statistics describe a whole country, never a specific company's purchases.
 - When asked for a company's purchase volumes, order frequency or spend and the evidence has none, say it is
   unavailable and name the data source that would be needed (shipment records or the client's sales history).
@@ -51,7 +56,7 @@ Rules you must follow:
 
 class Statement(BaseModel):
     text: str
-    label: Literal["verified", "client_provided", "estimate", "inference", "unavailable"]
+    label: Literal["verified", "client_provided", "calculated", "estimate", "inference", "unavailable"]
     evidence_ids: list[str]
 
 

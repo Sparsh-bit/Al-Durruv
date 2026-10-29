@@ -17,7 +17,7 @@ Operating the Durra trade-intelligence platform (Concilio Solutions). For first-
 | `LLM_DAILY_LIMIT_PER_USER` | optional | AI calls per user per day (default 50). The monthly AI budget is set in Administration |
 | `CENSUS_API_KEY` | for US monthly | Free key from https://api.census.gov/data/key_signup.html |
 | `FEATURE_WEB_CONTEXT` | optional | `true` (default) allows AI web research for companies and news |
-| `FEATURE_MAERSK_SCHEDULES` | optional | Reserved; `false` |
+| `MAERSK_CONSUMER_KEY` | for Maersk | Consumer Key of your Maersk Developer Portal app with the Locations and Commodities API products enabled. The Consumer Secret is **not** needed |
 | `CORS_ORIGINS`, `HOME_COUNTRY_ISO3`, `TRADE_YEARS_BACK`, `COMTRADE_*` | optional | See `backend/app/config.py` |
 
 No key is ever sent to the browser. Error messages and logs never print keys, and cached request keys strip any
@@ -113,3 +113,28 @@ with `neon branches create --name pre-migration-YYYYMMDD`.
 `backend/data/client_hs_list.csv` (the client's HS list exactly as given, plus analysis HS6 and findings) are loaded
 by the seed. To add new client information, add a new entry under `patches` with a new `id`. It applies once and
 never overwrites edits made in the app.
+
+## Maersk reference data
+
+* **Commodity references**: Products → open a product → *Look up in Maersk*. Candidates show the commodity code,
+  name, cargo types and the HS codes Maersk lists, next to the client code and the analysis HS6.
+  - Analysts save a reference; the client's code is never changed.
+  - Admins can also use its HS6 for trade analysis; the status stays "needs review", with source "Maersk
+    commodity reference".
+* **Route locations**: Logistics → *Route locations*. Search by name, UN/LOCODE or Maersk Geo ID, then save the
+  exact port or terminal. Saved locations can be attached to freight quotes as origin or destination.
+* Neither API provides prices, schedules, transit times or customs rulings.
+* If Maersk is unavailable or not configured, the screens say so and everything else keeps working.
+
+### `.env.example` lines to add (names and placeholders only)
+
+```
+# Maersk Developer Portal app (Locations + Commodities). Consumer Secret is not used.
+MAERSK_CONSUMER_KEY=
+# Optional
+ANTHROPIC_MODEL_FAST=claude-haiku-5-5
+ANTHROPIC_MODEL_BRIEF=claude-haiku-5-5
+LLM_DAILY_LIMIT_PER_USER=50
+CENSUS_API_KEY=
+FEATURE_WEB_CONTEXT=true
+```
