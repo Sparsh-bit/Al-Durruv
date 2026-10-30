@@ -343,7 +343,7 @@ def test_empty_and_unavailable_states(db, viewer, analyst):
     assert opp["rows"] == [] and opp["target_list_loaded"] is False
     assert viewer.post("/api/markets/opportunities", json=dict.fromkeys(opp["weights"], 0)).status_code == 422
     sources = {s["key"]: s for s in viewer.get("/api/admin/sources").json()}
-    assert sources["claude"]["status"] == "not_configured"
+    assert sources["ai"]["status"] == "not_configured"
     assert any(s["status"] == "not_connected" for s in sources.values())
     assert analyst.post("/api/ai/ask", json={"hs_code": "190531", "question": "Best market?"}).status_code == 503
 

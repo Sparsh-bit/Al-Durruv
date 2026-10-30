@@ -81,7 +81,7 @@ export default function Analyst() {
         subtitle="Ask questions about markets, competitors and prospects. Answers use only the platform's data, cite their evidence and label uncertainty."
       />
       {health.data?.ai_enabled === false && (
-        <div className="mb-6"><Notice tone="warn" title="AI is not configured">Add <code>ANTHROPIC_API_KEY</code> to the backend <code>.env</code> file and restart the API.</Notice></div>
+        <div className="mb-6"><Notice tone="warn" title="AI is not configured">Ask your administrator to turn on AI.</Notice></div>
       )}
       {overview.data && !ov && (
         <div className="mb-6"><Notice tone="warn" title="Load trade data first">The analyst answers from loaded statistics. Load data on the Market intelligence step.</Notice></div>
@@ -118,7 +118,7 @@ export default function Analyst() {
                     <StatementList statements={m.answer.statements} evidence={m.answer.evidence} />
                     {m.answer.usage.cost_usd !== undefined && (
                       <p className="text-[11px] text-muted">
-                        {m.answer.usage.model} · {m.answer.usage.input_tokens + m.answer.usage.output_tokens} tokens · ${m.answer.usage.cost_usd.toFixed(4)}
+                        {m.answer.usage.input_tokens + m.answer.usage.output_tokens} tokens · ${m.answer.usage.cost_usd.toFixed(4)}
                       </p>
                     )}
                     {m.answer.evidence.length > 0 && (
@@ -183,7 +183,6 @@ export default function Analyst() {
                 </li>
               ))}
             </ul>
-            {health.data?.model && <p className="mt-4 text-[11px] text-muted">Model: {health.data.model}</p>}
           </Card>
         </div>
       </div>

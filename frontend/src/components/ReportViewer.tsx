@@ -19,7 +19,7 @@ export default function ReportViewer({ id, content }: { id: number; content: Rep
             <p className="mt-1 text-[13px] text-slate-300">
               HS {content.hs_code} · {content.hs_description}
             </p>
-            <p className="mt-1 text-xs text-slate-400">Generated {dateTime(content.generated_at)} · {content.model}</p>
+            <p className="mt-1 text-xs text-slate-400">Generated {dateTime(content.generated_at)}</p>
           </div>
           <div className="flex gap-2">
             <Button variant="secondary" icon={<FileDown className="size-4" />} loading={exp.isPending && exp.variables === 'pdf'} onClick={() => exp.mutate('pdf')}>PDF</Button>

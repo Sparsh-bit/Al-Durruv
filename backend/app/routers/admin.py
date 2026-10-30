@@ -43,12 +43,10 @@ def sources(_: CurrentUser, db: DB):
             "last_run": _run_out(last),
         },
         {
-            "key": "claude",
-            "name": "Claude AI analyst and web research",
+            "key": "ai",
+            "name": "AI analyst and web research",
             "status": "connected" if s.ai_enabled else "not_configured",
-            "detail": f"Models: {s.model_fast} (fast), {s.model_brief} (briefs)"
-            if s.ai_enabled
-            else "Set ANTHROPIC_API_KEY in .env to enable AI features.",
+            "detail": "Connected" if s.ai_enabled else "Add the AI key in the server settings to turn on AI features.",
             "companies": db.scalar(select(func.count()).select_from(Company)),
         },
         {
@@ -271,7 +269,6 @@ def ai_usage_report(_: Admin, db: DB):
     return {
         "month_spend_usd": ai_usage.month_spend(db),
         "budget_usd": float(settings.get(db, "ai_monthly_budget_usd")),
-        "model": get_settings().model_brief,
         "by_feature": [
             {
                 "feature": f,
@@ -287,7 +284,6 @@ def ai_usage_report(_: Admin, db: DB):
             {
                 "at": r.created_at.isoformat(),
                 "feature": r.feature,
-                "model": r.model,
                 "input_tokens": r.input_tokens,
                 "output_tokens": r.output_tokens,
                 "cache_read_tokens": r.cache_read_tokens,

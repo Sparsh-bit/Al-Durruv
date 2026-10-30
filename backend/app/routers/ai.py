@@ -30,8 +30,10 @@ def ask(body: AskIn, user: CurrentUser, db: DB):
         raise HTTPException(404, f"Unknown HS code {body.hs_code}.")
     ai_usage.check_budget(db, user.id)
     evidence = build_context(db, body.hs_code, body.focus_m49)
-    answer, usage = claude.answer_question(body.question, evidence, [t.model_dump() for t in body.history])
+    history = [t.model_dump() for t in body.history]
+    answer, usage = claude.answer_question(body.question, evidence, history)
     usage["cost_usd"] = ai_usage.record(db, user.id, "analyst", usage)
+    usage.pop("model", None)
     db.commit()
     statements = validate_statements([s.model_dump() for s in answer.statements], evidence)
     cited = {i for s in statements for i in s["evidence_ids"]}

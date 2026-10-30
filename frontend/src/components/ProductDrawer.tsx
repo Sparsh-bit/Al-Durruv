@@ -168,7 +168,7 @@ export default function ProductDrawer({ product, siblings, onClose, onEdit }: {
           {mine.length > 0 && (
             <Card>
               <div className="flex items-center gap-2 border-b border-line-soft px-4 py-3 text-[13.5px] font-semibold text-ink-900">
-                <FileQuestion className="size-4 text-brand-700" /> Open questions for the client
+                <FileQuestion className="size-4 text-brand-700" /> Open questions
               </div>
               <ul className="divide-y divide-line-soft">
                 {mine.map((q) => (

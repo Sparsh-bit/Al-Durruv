@@ -56,7 +56,6 @@ function NewUser({ onDone }: { onDone: () => void }) {
 type Usage = {
   month_spend_usd: number
   budget_usd: number
-  model: string
   by_feature: { feature: string; calls: number; cost_usd: number; input_tokens: number; output_tokens: number; web_searches: number }[]
   recent: { at: string; feature: string; model: string; input_tokens: number; output_tokens: number; cache_read_tokens: number; web_searches: number; cost_usd: number }[]
 }
@@ -155,7 +154,7 @@ function UsageCard() {
   const pct = u.budget_usd ? Math.min(100, (u.month_spend_usd / u.budget_usd) * 100) : 100
   return (
     <Card className="mb-8">
-      <CardHeader title="AI usage and cost" subtitle={`This month · model ${u.model} · costs estimated from token counts at list prices`} />
+      <CardHeader title="AI usage and cost" subtitle={`This month · costs estimated from token counts at list prices`} />
       <div className="p-5">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <div className="tabular text-2xl font-semibold text-slate-900">${u.month_spend_usd.toFixed(2)} <span className="text-sm font-normal text-muted">of ${u.budget_usd.toFixed(2)} budget</span></div>

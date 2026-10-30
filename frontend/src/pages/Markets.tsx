@@ -270,7 +270,7 @@ function NewsCard({ hs, productName }: { hs: string; productName: string }) {
         }
       />
       {health.data && !health.data.ai_enabled && !d?.items.length ? (
-        <p className="px-5 py-4 text-sm text-muted">Available once the Claude API key is configured.</p>
+        <p className="px-5 py-4 text-sm text-muted">Available once AI is turned on.</p>
       ) : refresh.isPending ? (
         <div className="space-y-2 p-5">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-12" />)}</div>
       ) : !d?.items.length ? (

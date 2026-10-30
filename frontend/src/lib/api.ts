@@ -1,3 +1,5 @@
+import { toast } from 'sonner'
+
 const BASE = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') ?? ''
 const TOKEN_KEY = 'ti.token'
 
@@ -76,6 +78,9 @@ export const patch = <T>(path: string, body: unknown) => api<T>(path, { method: 
 export const put = <T>(path: string, body: unknown) => api<T>(path, { method: 'PUT', body: JSON.stringify(body) })
 export const del = (path: string) => api<void>(path, { method: 'DELETE' })
 
+/** Fire-and-forget download for plain buttons: failures show as a message instead of doing nothing. */
+export const downloadOrWarn = (path: string) => download(path).catch((e: Error) => toast.error(e.message))
+
 export async function download(path: string): Promise<void> {
   const res = await request(path)
   const name = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') ?? '')?.[1] ?? 'download'
@@ -84,5 +89,5 @@ export async function download(path: string): Promise<void> {
   document.body.appendChild(a)
   a.click()
   a.remove()
-  setTimeout(() => URL.revokeObjectURL(url), 1000)
+  setTimeout(() => URL.revokeObjectURL(url), 60_000) // browsers may start saving large files late
 }

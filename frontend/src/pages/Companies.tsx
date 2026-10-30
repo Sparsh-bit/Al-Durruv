@@ -56,7 +56,7 @@ function ResearchPanel({ hs, productId, kind, label, markets, onFinished }: {
   if (health.data && !health.data.ai_enabled)
     return (
       <Notice tone="warn" title="AI research is not configured">
-        Add <code>ANTHROPIC_API_KEY</code> to the backend <code>.env</code> file and restart the API to enable company discovery.
+        Ask your administrator to turn on AI to use company discovery.
       </Notice>
     )
 

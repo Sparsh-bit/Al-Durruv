@@ -153,7 +153,7 @@ export default function MarketsRegions() {
       <PageHeader
         eyebrow="Target markets"
         title="Markets & regions"
-        subtitle="The client's country list, split into existing and expansion markets. It comes from the client's own file and is not hard-coded."
+        subtitle="Your country list, split into existing and expansion markets, from your own file."
         actions={
           can('admin') && (
             <>
@@ -191,7 +191,7 @@ export default function MarketsRegions() {
           {markets.isLoading ? (
             <Skeleton className="m-5 h-48" />
           ) : total === 0 ? (
-            <EmptyState icon={<Globe2 />} title="The client's country list is not loaded yet">
+            <EmptyState icon={<Globe2 />} title="Your country list is not loaded yet">
               Import a CSV or Excel file with a <code>country</code> column (name or ISO3) and a <code>segment</code> column (<i>existing</i> or <i>expansion</i>), plus optional <code>notes</code>.
             </EmptyState>
           ) : (

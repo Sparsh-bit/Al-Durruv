@@ -228,7 +228,7 @@ function Tariffs() {
   const remove = useMutation({ mutationFn: (id: number) => del(`/api/tariffs/${id}`), onSuccess: () => qc.invalidateQueries({ queryKey: ['tariffs'] }) })
   return (
     <Card>
-      <CardHeader title="Tariffs" subtitle="Connector rates (WITS, USITC) and admin overrides. An override wins for the same importer, HS code, origin and type. Tariffs are never hard-coded." action={<Button size="sm" icon={<Plus />} onClick={() => setAdding(true)}>Add override</Button>} />
+      <CardHeader title="Tariffs" subtitle="Connector rates (WITS, USITC) and admin overrides. An override wins for the same importer, HS code, origin and type." action={<Button size="sm" icon={<Plus />} onClick={() => setAdding(true)}>Add override</Button>} />
       <div className="flex flex-wrap gap-3 border-b border-line-soft px-5 py-3">
         <Input className="w-24 font-mono uppercase" value={market} maxLength={3} onChange={(e) => setMarket(e.target.value.toUpperCase())} aria-label="Importer" />
         <Input className="w-32 font-mono" value={hs} onChange={(e) => setHs(e.target.value)} aria-label="HS prefix" />

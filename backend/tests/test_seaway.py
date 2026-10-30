@@ -115,3 +115,51 @@ def test_staleness_policy():
     never = intel._staleness({"key": "comext", "last_retrieved": None, "rows": 5}, now)
     assert fresh["stale"] is False and old["stale"] is True and old["stale_reasons"]
     assert never["stale"] is True and lagging["stale"] is True
+
+
+def test_every_statement_label_renders_in_a_report_pdf():
+    from app.ai.claude import Statement
+    from app.reports import LABEL_COLORS, render_pdf
+
+    labels = Statement.model_fields["label"].annotation.__args__
+    assert set(labels) <= set(LABEL_COLORS)
+    content = {
+        "title": "T",
+        "product": "P",
+        "hs_code": "200290",
+        "hs_description": "d",
+        "generated_at": "2026-10-30T10:00:00",
+        "validation": {"exported": len(labels), "withheld": 0},
+        "evidence": [],
+        "sections": [{"title": "S", "statements": [{"text": "x", "label": x, "evidence_ids": []} for x in labels]}],
+    }
+    assert render_pdf({"content": content}).startswith(b"%PDF")
+
+
+def test_arabic_company_name_downloads_with_a_safe_file_name(db, viewer):
+    from app.models import Company
+
+    c = Company(
+        name="شركة الدرة",
+        country_iso3="EGY",
+        brief={
+            "company": "x",
+            "generated_at": "2026-10-30T10:00:00",
+            "language": "en",
+            "sections": [],
+            "evidence": [],
+        },
+    )
+    db.add(c)
+    db.commit()
+    try:
+        r = viewer.get(f"/api/companies/{c.id}/brief/pdf")
+        assert r.status_code == 200 and r.content.startswith(b"%PDF")
+        assert 'filename="brief-company.pdf"' in r.headers["content-disposition"]
+    finally:
+        db.delete(c)
+        db.commit()
+
+
+def test_no_ai_vendor_name_reaches_the_client(viewer):
+    assert "model" not in viewer.get("/api/health").json()

@@ -41,8 +41,8 @@ export default function Integrations() {
           </div>
         </Card>
         <Card className="p-5">
-          <div className="micro text-muted">AI model</div>
-          <div className="num mt-3 text-[15px]">{health.data?.ai_enabled ? health.data.model : 'Not configured'}</div>
+          <div className="micro text-muted">AI assistant</div>
+          <div className="num mt-3 text-[15px]">{health.data?.ai_enabled ? 'Connected' : 'Not configured'}</div>
         </Card>
         <Card className="p-5">
           <div className="micro text-muted">Stored trade observations</div>

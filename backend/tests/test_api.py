@@ -179,7 +179,7 @@ def test_every_observation_has_provenance_and_world_is_not_a_country(db, viewer)
 
 def test_ai_endpoints_return_503_without_key(analyst):
     r = analyst.post("/api/ai/ask", json={"hs_code": "190531", "question": "Which market?"})
-    assert r.status_code == 503 and "ANTHROPIC_API_KEY" in r.json()["detail"]
+    assert r.status_code == 503 and "not configured" in r.json()["detail"]
     assert analyst.post("/api/research", json={"hs_code": "190531", "country_m49": 826}).status_code == 503
 
 

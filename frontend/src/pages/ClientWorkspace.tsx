@@ -58,7 +58,7 @@ function QuestionRow({ q }: { q: Clarification }) {
           )}
           {open && (
             <div className="mt-3 space-y-2">
-              <Textarea rows={3} value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="The client's answer, as given" aria-label="Answer" />
+              <Textarea rows={3} value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="Your answer, as given" aria-label="Answer" />
               <div className="flex flex-wrap justify-end gap-2">
                 <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
                 <Button size="sm" variant="secondary" loading={save.isPending} onClick={() => save.mutate(undefined)}>Save draft</Button>
@@ -150,7 +150,7 @@ export default function ClientWorkspace() {
       <PageHeader
         eyebrow="Client workspace"
         title="Questions & entities"
-        subtitle="Open points to settle with the client, plus the manufacturing and export entities. Answers are recorded as given. The platform does not assume them."
+        subtitle="Open points to settle together, plus your manufacturing and export entities. Answers are recorded as given. The platform does not assume them."
         actions={can('analyst') && <Button icon={<Plus />} onClick={() => setAsking(true)}>Add question</Button>}
       />
       <div className="grid gap-6 xl:grid-cols-[1.5fr_1fr]">

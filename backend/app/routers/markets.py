@@ -251,7 +251,7 @@ class NewsIn(BaseModel):
 def refresh_news(hs: str, body: NewsIn, user: Analyst, db: DB):
     _hs(db, hs)
     if not get_settings().ai_enabled:
-        raise HTTPException(503, "AI is not configured. Add ANTHROPIC_API_KEY to the backend .env file.")
+        raise HTTPException(503, "AI is not configured. Ask your administrator to turn it on.")
     row = _latest_news(db, hs)
     if row and not body.force and datetime.now(UTC) - row.retrieved_at < timedelta(days=7):
         return {"items": row.items, "retrieved_at": row.retrieved_at.isoformat(), "cached": True}

@@ -61,12 +61,12 @@ export default function Brief() {
           </>
         }
       />
-      {aiOff && <div className="mb-6"><Notice tone="warn" title="AI is not configured">Add <code>ANTHROPIC_API_KEY</code> to the backend <code>.env</code> file and restart the API.</Notice></div>}
+      {aiOff && <div className="mb-6"><Notice tone="warn" title="AI is not configured">Ask your administrator to turn on AI.</Notice></div>}
       {overview.data && !hasData && <div className="mb-6"><Notice tone="warn" title="Load trade data first">A brief needs trade statistics. Load data on the Market intelligence step.</Notice></div>}
       {generate.isPending ? (
         <Card>
           <EmptyState icon={<Spinner className="size-6" />} title="Writing the brief…">
-            Building the evidence pack, drafting with Claude and validating every statement. This takes 20–60 seconds.
+            Building the evidence pack, drafting and checking every statement. This usually takes under a minute.
           </EmptyState>
         </Card>
       ) : report.data ? (

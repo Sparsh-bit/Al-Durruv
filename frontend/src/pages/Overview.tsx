@@ -247,7 +247,7 @@ export default function Overview() {
             <div><dt className="micro text-muted">Entities pending</dt><dd className="num mt-1 text-[22px]">{d.entities.pending_verification ?? 0}</dd></div>
             <div><dt className="micro text-muted">Entities verified</dt><dd className="num mt-1 text-[22px]">{d.entities.verified ?? 0}</dd></div>
           </dl>
-          {markets === 0 && <p className="mt-4 text-[12.5px] text-amber-800">The client's country list has not been imported yet.</p>}
+          {markets === 0 && <p className="mt-4 text-[12.5px] text-amber-800">Your country list has not been imported yet.</p>}
         </Card>
         <Card className="p-5">
           <SectionTitle index="07" title="Integration health" action={<Link to="/integrations" className="text-[12.5px] font-medium text-brand-700 hover:underline">Details</Link>} />

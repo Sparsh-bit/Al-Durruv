@@ -19,8 +19,15 @@ from app.exports import safe_cell
 
 NAVY = colors.HexColor("#0F2A4A")
 MUTED = colors.HexColor("#5B6B7F")
-LABEL_COLORS = {"verified": "#0E7A4F", "estimate": "#B26A00", "inference": "#3756C8", "unavailable": "#6B7280"}
-LABEL_TEXT = {"verified": "VERIFIED", "estimate": "ESTIMATE", "inference": "INFERENCE", "unavailable": "UNAVAILABLE"}
+LABEL_COLORS = {
+    "verified": "#0E7A4F",
+    "client_provided": "#7A4FB5",
+    "calculated": "#0F6E84",
+    "estimate": "#B26A00",
+    "inference": "#3756C8",
+    "unavailable": "#6B7280",
+}
+LABEL_TEXT = {k: k.replace("_", " ").upper() for k in LABEL_COLORS}
 
 
 def client_statements(section: dict) -> list[dict]:
@@ -87,7 +94,7 @@ def render_pdf(report: dict) -> bytes:
         Paragraph(escape(f"Product: {c['product']} · HS {c['hs_code']} — {c['hs_description']}"), st["meta"]),
         Paragraph(
             escape(
-                f"Generated {c['generated_at'][:16].replace('T', ' ')} UTC · model {c['model']} · "
+                f"Generated {c['generated_at'][:16].replace('T', ' ')} UTC · "
                 f"{c['validation']['exported']} statements exported, "
                 f"{c['validation']['withheld']} withheld by the validator"
             ),
@@ -99,6 +106,8 @@ def render_pdf(report: dict) -> bytes:
                 f'<font color="{LABEL_COLORS[k]}"><b>{v}</b></font> ' + d
                 for k, v, d in [
                     ("verified", "VERIFIED", "stated in cited data;"),
+                    ("client_provided", "CLIENT PROVIDED", "from your own information;"),
+                    ("calculated", "CALCULATED", "computed from sourced data;"),
                     ("estimate", "ESTIMATE", "labelled estimate;"),
                     ("inference", "INFERENCE", "analyst reasoning;"),
                     ("unavailable", "UNAVAILABLE", "data not available."),
@@ -337,8 +346,7 @@ def render_company_brief_pdf(content: dict) -> bytes:
         Paragraph(escape(content["company"]), st["title"]),
         Paragraph(
             escape(
-                f"Generated {content['generated_at'][:16].replace('T', ' ')} UTC · model "
-                f"{content.get('model')} · prompt {content.get('prompt_version', 'n/a')} · "
+                f"Generated {content['generated_at'][:16].replace('T', ' ')} UTC · "
                 f"language {content.get('language', 'en')}"
             ),
             st["meta"],

@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Download, RotateCcw, Tags } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Badge, Button, Card, EmptyState, InfoTip, Notice, PageHeader, Pager, Select, Skeleton } from '../components/ui'
-import { download, post } from '../lib/api'
+import { downloadOrWarn, post } from '../lib/api'
 import { pct, usd } from '../lib/format'
 import { IDENTITY } from '../lib/labels'
 import { growBars, useReveal } from '../lib/motion'
@@ -62,7 +62,7 @@ export default function Opportunities() {
         eyebrow="Private label"
         title="Opportunity engine"
         subtitle="Priority category × target country × retailer. Each score is a weighted average of the components shown. A component without data is left out and the other weights are rescaled. Nothing is estimated."
-        actions={<Button variant="secondary" icon={<Download />} onClick={() => download('/api/markets/opportunities/export')}>Export CSV</Button>}
+        actions={<Button variant="secondary" icon={<Download />} onClick={() => downloadOrWarn('/api/markets/opportunities/export')}>Export CSV</Button>}
       />
 
       {d?.note && <div className="mb-4"><Notice tone="warn">{d.note}</Notice></div>}

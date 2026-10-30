@@ -25,7 +25,6 @@ def _summary(r: Report) -> dict:
         "title": r.title,
         "hs_code": r.hs_code,
         "product_id": r.product_id,
-        "model": r.model,
         "created_at": r.created_at.isoformat(),
         "validation": v,
     }
@@ -73,7 +72,6 @@ def generate(body: GenerateIn, user: Analyst, db: DB):
         "hs_code": hs,
         "hs_description": db.get(HSCode, hs).description,
         "generated_at": datetime.now(UTC).isoformat(),
-        "model": usage["model"],
         "usage": usage,
         "sections": sections,
         "evidence": [e.as_dict() for e in evidence],
@@ -105,7 +103,7 @@ def _get(db, report_id: int) -> Report:
 @router.get("/{report_id}")
 def get_report(report_id: int, _: CurrentUser, db: DB):
     r = _get(db, report_id)
-    return {**_summary(r), "content": r.content}
+    return {**_summary(r), "content": {k: v for k, v in r.content.items() if k != "model"}}
 
 
 @router.get("/{report_id}/export")

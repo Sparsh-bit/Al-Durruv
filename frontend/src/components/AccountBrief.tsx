@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Copy, FileDown, Mail, MessageCircle, Sparkles } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { ApiError, api, download, post } from '../lib/api'
+import { ApiError, api, download, downloadOrWarn, post } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { dateTime } from '../lib/format'
 import type { BriefVersion, CompanyBrief } from '../lib/types'
@@ -71,7 +71,7 @@ export default function AccountBrief({ companyId, hasBrief }: { companyId: numbe
         ) : b ? (
           <div className="space-y-5">
             <p className="micro text-muted">
-              {dateTime(b.generated_at)} · {b.model}{b.prompt_version ? ` · ${b.prompt_version}` : ''} · ${b.cost_usd.toFixed(4)}
+              {dateTime(b.generated_at)} · ${b.cost_usd.toFixed(4)}
             </p>
             <div dir={rtl ? 'rtl' : 'ltr'} lang={rtl ? 'ar' : 'en'} className={rtl ? 'space-y-5 text-right' : 'space-y-5'}>
               {b.sections.map((s) => (
@@ -109,8 +109,8 @@ export default function AccountBrief({ companyId, hasBrief }: { companyId: numbe
                 <ul className="mt-2 space-y-1 text-[12px] text-muted">
                   {history.data!.map((h) => (
                     <li key={h.id} className="flex items-center justify-between gap-2">
-                      <span>{dateTime(h.created_at)} · {h.language.toUpperCase()} · {h.model} · {h.prompt_version}</span>
-                      <button type="button" className="text-brand-700 hover:underline" onClick={() => download(`/api/companies/${companyId}/brief/pdf?brief_id=${h.id}`)}>PDF</button>
+                      <span>{dateTime(h.created_at)} · {h.language.toUpperCase()}</span>
+                      <button type="button" className="text-brand-700 hover:underline" onClick={() => downloadOrWarn(`/api/companies/${companyId}/brief/pdf?brief_id=${h.id}`)}>PDF</button>
                     </li>
                   ))}
                 </ul>

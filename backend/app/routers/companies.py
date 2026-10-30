@@ -201,7 +201,6 @@ def generate_brief(company_id: int, user: Analyst, db: DB, body: BriefIn | None 
         "company": c.name,
         "language": language,
         "generated_at": datetime.now(UTC).isoformat(),
-        "model": use.get("model"),
         "prompt_version": claude.COMPANY_BRIEF_PROMPT_VERSION,
         "cost_usd": total_cost,
         "sections": sections,
@@ -244,7 +243,6 @@ def brief_history(company_id: int, _: CurrentUser, db: DB):
         {
             "id": b.id,
             "language": b.language,
-            "model": b.model,
             "prompt_version": b.prompt_version,
             "cost_usd": b.cost_usd,
             "created_at": b.created_at.isoformat(),
@@ -266,7 +264,7 @@ def brief_pdf(company_id: int, user: CurrentUser, db: DB, brief_id: int | None =
         raise HTTPException(404, "No brief has been generated for this company yet.")
     audit.record(db, user, "export", "brief", c.id, content.get("language", "en"))
     db.commit()
-    safe = "".join(ch if ch.isalnum() else "-" for ch in c.name).strip("-").lower() or "company"
+    safe = _ascii_name(c.name, "company")
     return Response(
         render_company_brief_pdf(content),
         media_type="application/pdf",
@@ -285,7 +283,7 @@ class ResearchIn(BaseModel):
 @router.post("/research", status_code=202)
 def start_research(body: ResearchIn, user: Analyst, db: DB, tasks: BackgroundTasks):
     if not get_settings().ai_enabled:
-        raise HTTPException(503, "AI is not configured. Add ANTHROPIC_API_KEY to the backend .env file.")
+        raise HTTPException(503, "AI is not configured. Ask your administrator to turn it on.")
     country = db.get(Country, body.country_m49)
     if not country or not db.get(HSCode, body.hs_code):
         raise HTTPException(404, "Unknown country or HS code.")
@@ -328,6 +326,11 @@ EXPORT_COLUMNS = [
     "source_url",
     "source_retrieved",
 ]
+
+
+def _ascii_name(name: str, fallback: str) -> str:
+    """For Content-Disposition, which must be Latin-1: an Arabic name would otherwise fail the whole download."""
+    return "".join(ch if ch.isascii() and ch.isalnum() else "-" for ch in name).strip("-").lower() or fallback
 
 
 def _csv(companies: list[Company], filename: str) -> Response:
@@ -423,7 +426,7 @@ def export_list(list_id: int, user: CurrentUser, db: DB):
     pl = db.get(ProspectList, list_id)
     if not pl:
         raise HTTPException(404, "List not found.")
-    safe = "".join(ch if ch.isalnum() else "-" for ch in pl.name).strip("-").lower() or "list"
+    safe = _ascii_name(pl.name, "list")
     audit.record(db, user, "export", "prospect_list", list_id, pl.name)
     db.commit()
     return _csv(_list_companies(db, list_id), f"prospects-{safe}.csv")

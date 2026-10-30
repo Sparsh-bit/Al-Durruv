@@ -92,8 +92,6 @@ def health():
     return {
         "status": "ok",
         "ai_enabled": settings.ai_enabled,
-        "model": settings.model_fast,
-        "model_brief": settings.model_brief,
     }
 
 

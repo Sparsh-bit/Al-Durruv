@@ -3,7 +3,7 @@ import { ExternalLink, ShieldAlert, Store, Tags } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { Badge, Button, Card, CountryChip, EmptyState, Field, Input, Notice, PageHeader, Segmented, Select, Skeleton, SourceLink, Textarea } from '../components/ui'
-import { api, download, patch, put } from '../lib/api'
+import { api, downloadOrWarn, patch, put } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { date } from '../lib/format'
 import { IDENTITY, PL_META, STAGES } from '../lib/labels'
@@ -328,7 +328,7 @@ export default function Accounts() {
         eyebrow="Accounts"
         title="Retailers & competitors"
         subtitle="Priority retail accounts and named competitors. Every fact links to an official or cited source with its retrieval date. The platform records outreach only when your team does."
-        actions={<Button variant="secondary" onClick={() => download(`/api/companies/export?relationship=${kind}`)}>Export CSV</Button>}
+        actions={<Button variant="secondary" onClick={() => downloadOrWarn(`/api/companies/export?relationship=${kind}`)}>Export CSV</Button>}
       />
       <div className="mb-5">
         <Segmented label="Account type" value={kind} onChange={setKind} options={[{ value: 'retailer', label: 'Retail accounts' }, { value: 'competitor', label: 'Competitors' }]} />
