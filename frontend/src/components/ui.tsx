@@ -74,7 +74,7 @@ export function PageHeader({ title, subtitle, actions, eyebrow }: { title: React
 
 export function Stat({ label, value, hint, accent }: { label: string; value: ReactNode; hint?: ReactNode; accent?: boolean }) {
   return (
-    <Card className={clsx('relative overflow-hidden p-5', accent && 'border-ink-900 bg-ink-900 text-white')}>
+    <Card className={clsx('relative overflow-hidden p-5', accent && 'border-ink-900! bg-ink-900! text-white')}>
       {accent && <span className="absolute inset-x-0 top-0 h-[3px] bg-brand-500" aria-hidden />}
       <div className={clsx('micro', accent ? 'text-brand-200' : 'text-muted')}>{label}</div>
       <div className="num mt-3 text-[26px] leading-none font-medium">{value}</div>

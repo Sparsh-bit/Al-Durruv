@@ -2,6 +2,7 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { ArrowUp, Bot, ShieldCheck, Sparkles, User } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { useSearchParams } from 'react-router'
+import { toHistory, type Msg } from '../lib/chat'
 import { EvidenceList, StatementList } from '../components/Statements'
 import { Card, CardHeader, LabelBadge, Notice, Select, Spinner, Textarea } from '../components/ui'
 import { LABEL_META } from '../lib/labels'
@@ -10,24 +11,12 @@ import { api, post } from '../lib/api'
 import { useOverview, useProduct } from '../lib/hooks'
 import type { AskResponse, Label } from '../lib/types'
 
-type Msg = { role: 'user'; text: string } | { role: 'assistant'; answer: AskResponse } | { role: 'error'; text: string }
-
 const SUGGESTIONS = [
   'Which three markets should we prioritise and why?',
   'Who are our main competitor supplier countries in the top market?',
   'What data is missing before we can quote prices to a buyer?',
   'Which markets are growing fastest from a meaningful base?',
 ]
-
-function toHistory(msgs: Msg[]): { role: 'user' | 'assistant'; content: string }[] {
-  return msgs.flatMap((m): { role: 'user' | 'assistant'; content: string }[] =>
-    m.role === 'user'
-      ? [{ role: 'user' as const, content: m.text }]
-      : m.role === 'assistant'
-        ? [{ role: 'assistant' as const, content: m.answer.statements.map((s) => s.text).join(' ') }]
-        : [],
-  )
-}
 
 export default function Analyst() {
   const [params] = useSearchParams()

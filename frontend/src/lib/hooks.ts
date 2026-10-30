@@ -46,3 +46,20 @@ export function useRun(runId: number | null | undefined, onDone?: (run: Run) => 
   }, [q.data, status])
   return q.data
 }
+
+export const lastProduct = {
+  get: () => {
+    try {
+      return localStorage.getItem('ti.product')
+    } catch {
+      return null
+    }
+  },
+  set: (id: string) => {
+    try {
+      localStorage.setItem('ti.product', id)
+    } catch {
+      /* ignore */
+    }
+  },
+}

@@ -1,3 +1,5 @@
+import { lastProduct } from '../lib/hooks'
+import ConcilioBot from './ConcilioBot'
 import * as Dialog from '@radix-ui/react-dialog'
 import * as Menu from '@radix-ui/react-dropdown-menu'
 import { useQuery } from '@tanstack/react-query'
@@ -39,23 +41,6 @@ import { slideTo } from '../lib/motion'
 import type { AlertItem, AppSettings, Company, Product, User } from '../lib/types'
 import { ClientMark, PoweredBy } from './Brand'
 import ChangePassword from './ChangePassword'
-
-const lastProduct = {
-  get: () => {
-    try {
-      return localStorage.getItem('ti.product')
-    } catch {
-      return null
-    }
-  },
-  set: (id: string) => {
-    try {
-      localStorage.setItem('ti.product', id)
-    } catch {
-      /* ignore */
-    }
-  },
-}
 
 function useClient() {
   const q = useQuery({ queryKey: ['settings'], queryFn: () => api<AppSettings>('/api/admin/settings'), staleTime: 300_000 })
@@ -337,6 +322,7 @@ export default function Layout() {
       <main className="mx-auto max-w-[1440px] px-4 py-7 sm:px-6 lg:px-10 lg:py-9">
         <Outlet />
       </main>
+      <ConcilioBot />
       <footer className="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-3 border-t border-line px-4 py-5 text-[11.5px] text-muted sm:px-6 lg:px-10">
         <span>Figures cite their source. Unverified items are labelled as such.</span>
         <PoweredBy />
